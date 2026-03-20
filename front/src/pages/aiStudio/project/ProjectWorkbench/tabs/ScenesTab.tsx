@@ -2,10 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Input, Modal, Space, message } from 'antd'
 import { LinkOutlined, PlusOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
-import { StudioAssetsService, StudioShotLinksService } from '../../../../../services/generated'
-import type { ProjectSceneLinkRead, SceneRead } from '../../../../../services/generated'
+import { StudioShotLinksService } from '../../../../../services/generated'
+import type { ProjectSceneLinkRead } from '../../../../../services/generated'
 import { buildFileDownloadUrl, resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
+import { StudioEntitiesApi } from '../../../../../services/studioEntities'
+
+type SceneLike = {
+  id: string
+  name: string
+  description?: string | null
+  thumbnail?: string
+}
 
 export function ScenesTab() {
   const navigate = useNavigate()
@@ -13,10 +21,10 @@ export function ScenesTab() {
 
   const [links, setLinks] = useState<ProjectSceneLinkRead[]>([])
   const [linksLoading, setLinksLoading] = useState(false)
-  const [scenesById, setScenesById] = useState<Record<string, SceneRead>>({})
+  const [scenesById, setScenesById] = useState<Record<string, SceneLike>>({})
 
   const [linkModalOpen, setLinkModalOpen] = useState(false)
-  const [scenes, setScenes] = useState<SceneRead[]>([])
+  const [scenes, setScenes] = useState<SceneLike[]>([])
   const [scenesLoading, setScenesLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [linkingId, setLinkingId] = useState<string | null>(null)
@@ -26,30 +34,31 @@ export function ScenesTab() {
     if (!projectId) return
     setLinksLoading(true)
     try {
-      const res = await StudioShotLinksService.listProjectSceneLinksApiV1StudioShotLinksSceneGet({
+      const res = await StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'scene',
         projectId,
         chapterId: null,
         shotId: null,
-        sceneId: null,
+        assetId: null,
         order: null,
         isDesc: false,
         page: 1,
         pageSize: 100,
       })
-      const items = res.data?.items ?? []
+      const items = (res.data?.items ?? []) as ProjectSceneLinkRead[]
       setLinks(items)
 
       const ids = Array.from(new Set(items.map((l) => l.scene_id)))
       const fetched = await Promise.all(
         ids.map((id) =>
-          StudioAssetsService.getSceneApiV1StudioAssetsScenesSceneIdGet({ sceneId: id })
-            .then((r) => r.data ?? null)
+          StudioEntitiesApi.get('scene', id)
+            .then((r) => (r.data ?? null) as SceneLike | null)
             .catch(() => null),
         ),
       )
-      const next: Record<string, SceneRead> = {}
+      const next: Record<string, SceneLike> = {}
       fetched.filter(Boolean).forEach((s) => {
-        next[(s as SceneRead).id] = s as SceneRead
+        next[(s as SceneLike).id] = s as SceneLike
       })
       setScenesById(next)
     } catch {
@@ -65,14 +74,14 @@ export function ScenesTab() {
     setScenesLoading(true)
     try {
       const q = (searchQuery !== undefined ? searchQuery : search).trim()
-      const res = await StudioAssetsService.listScenesApiV1StudioAssetsScenesGet({
+      const res = await StudioEntitiesApi.list('scene', {
         q: q ? q : null,
         order: 'updated_at',
         isDesc: true,
         page: 1,
         pageSize: 100,
       })
-      setScenes(res.data?.items ?? [])
+      setScenes((res.data?.items ?? []) as SceneLike[])
     } catch {
       message.error('加载场景失败')
       setScenes([])
@@ -102,7 +111,7 @@ export function ScenesTab() {
     return undefined
   }
 
-  const handleLinkScene = async (scene: SceneRead) => {
+  const handleLinkScene = async (scene: SceneLike) => {
     if (!projectId) return
     setLinkingId(scene.id)
     try {

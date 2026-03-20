@@ -1,5 +1,4 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import type { PropImageRead, PropRead } from '../../../services/generated'
 import { AssetEditPageBase } from './components/AssetEditPageBase'
 import { assetAdapters } from './assetAdapters'
 
@@ -9,7 +8,7 @@ export default function PropAssetEditPage() {
   const adapter = assetAdapters.prop
 
   return (
-    <AssetEditPageBase<PropRead, PropImageRead>
+    <AssetEditPageBase<any, any>
       assetId={propId}
       onNavigate={(to, replace) => navigate(to, replace ? { replace: true } : undefined)}
       {...adapter}

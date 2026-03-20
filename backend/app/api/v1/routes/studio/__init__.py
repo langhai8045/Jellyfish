@@ -3,9 +3,8 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes.studio import (
-    assets,
-    cast,
     chapters,
+    entities,
     files,
     image_tasks,
     import_from_extraction,
@@ -26,8 +25,7 @@ router.include_router(shots.dialog_router, prefix="/shot-dialog-lines", tags=["s
 router.include_router(shots.links_router, prefix="/shot-links", tags=["studio/shot-links"])
 router.include_router(shots.frames_router, prefix="/shot-frame-images", tags=["studio/shot-frame-images"])
 
-router.include_router(assets.router, prefix="/assets", tags=["studio/assets"])
-router.include_router(cast.router, prefix="/cast", tags=["studio/cast"])
+router.include_router(entities.router, prefix="/entities", tags=["studio/entities"])
 router.include_router(prompts.router, prefix="/prompts", tags=["studio/prompts"])
 router.include_router(files.router, prefix="/files", tags=["studio/files"])
 router.include_router(timeline.router, prefix="/timeline", tags=["studio/timeline"])

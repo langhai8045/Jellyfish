@@ -20,5 +20,9 @@ export type ProjectCostumeLinkRead = {
      */
     shot_id?: (string | null);
     costume_id: string;
+    /**
+     * 服装缩略图下载地址
+     */
+    thumbnail?: string;
 };
 

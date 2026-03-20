@@ -1,5 +1,4 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import type { CostumeImageRead, CostumeRead } from '../../../services/generated'
 import { AssetEditPageBase } from './components/AssetEditPageBase'
 import { assetAdapters } from './assetAdapters'
 
@@ -9,7 +8,7 @@ export default function CostumeAssetEditPage() {
   const adapter = assetAdapters.costume
 
   return (
-    <AssetEditPageBase<CostumeRead, CostumeImageRead>
+    <AssetEditPageBase<any, any>
       assetId={costumeId}
       onNavigate={(to, replace) => navigate(to, replace ? { replace: true } : undefined)}
       {...adapter}

@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.utils import apply_keyword_filter, apply_order, paginate
 from app.dependencies import get_db
+from app.api.v1.routes.studio.entity_helpers import entity_spec, normalize_entity_type, resolve_thumbnails
 from app.models.studio import (
     Chapter,
     Character,
     Costume,
-    CostumeImage,
     Project,
     Prop,
-    PropImage,
     Scene,
-    SceneImage,
     Shot,
     Actor,
-    AssetViewAngle,
     ProjectActorLink,
     ProjectCostumeLink,
     ProjectPropLink,
@@ -62,89 +61,6 @@ DETAIL_ORDER_FIELDS = {"id"}
 DIALOG_ORDER_FIELDS = {"index", "id", "created_at", "updated_at"}
 LINK_ORDER_FIELDS = {"id", "created_at", "updated_at"}
 FRAME_IMAGE_ORDER_FIELDS = {"id", "frame_type", "created_at", "updated_at"}
-DOWNLOAD_URL_TEMPLATE = "/api/v1/studio/files/{file_id}/download"
-
-
-def _download_url(file_id: str) -> str:
-    return DOWNLOAD_URL_TEMPLATE.format(file_id=file_id)
-
-
-async def _resolve_scene_thumbnails(db: AsyncSession, *, scene_ids: list[str]) -> dict[str, str]:
-    """为 scene_id 批量解析缩略图：优先 front 视角，其次最新。"""
-    if not scene_ids:
-        return {}
-    stmt = select(SceneImage).where(
-        SceneImage.scene_id.in_(scene_ids),
-        SceneImage.file_id.is_not(None),
-    )
-    res = await db.execute(stmt)
-    rows = res.scalars().all()
-    best: dict[str, tuple[int, int, int, str]] = {}
-    for row in rows:
-        if not row.file_id:
-            continue
-        created_ts = int(row.created_at.timestamp()) if row.created_at else -1
-        score = (
-            1 if row.view_angle == AssetViewAngle.front else 0,
-            created_ts,
-            row.id,
-        )
-        current = best.get(row.scene_id)
-        if current is None or score > current[:3]:
-            best[row.scene_id] = (*score, row.file_id)
-    return {scene_id: _download_url(score[3]) for scene_id, score in best.items()}
-
-
-async def _resolve_prop_thumbnails(db: AsyncSession, *, prop_ids: list[str]) -> dict[str, str]:
-    """为 prop_id 批量解析缩略图：优先 front 视角，其次最新。"""
-    if not prop_ids:
-        return {}
-    stmt = select(PropImage).where(
-        PropImage.prop_id.in_(prop_ids),
-        PropImage.file_id.is_not(None),
-    )
-    res = await db.execute(stmt)
-    rows = res.scalars().all()
-    best: dict[str, tuple[int, int, int, str]] = {}
-    for row in rows:
-        if not row.file_id:
-            continue
-        created_ts = int(row.created_at.timestamp()) if row.created_at else -1
-        score = (
-            1 if row.view_angle == AssetViewAngle.front else 0,
-            created_ts,
-            row.id,
-        )
-        current = best.get(row.prop_id)
-        if current is None or score > current[:3]:
-            best[row.prop_id] = (*score, row.file_id)
-    return {prop_id: _download_url(score[3]) for prop_id, score in best.items()}
-
-
-async def _resolve_costume_thumbnails(db: AsyncSession, *, costume_ids: list[str]) -> dict[str, str]:
-    """为 costume_id 批量解析缩略图：优先 front 视角，其次最新。"""
-    if not costume_ids:
-        return {}
-    stmt = select(CostumeImage).where(
-        CostumeImage.costume_id.in_(costume_ids),
-        CostumeImage.file_id.is_not(None),
-    )
-    res = await db.execute(stmt)
-    rows = res.scalars().all()
-    best: dict[str, tuple[int, int, int, str]] = {}
-    for row in rows:
-        if not row.file_id:
-            continue
-        created_ts = int(row.created_at.timestamp()) if row.created_at else -1
-        score = (
-            1 if row.view_angle == AssetViewAngle.front else 0,
-            created_ts,
-            row.id,
-        )
-        current = best.get(row.costume_id)
-        if current is None or score > current[:3]:
-            best[row.costume_id] = (*score, row.file_id)
-    return {costume_id: _download_url(score[3]) for costume_id, score in best.items()}
 
 
 async def _ensure_chapter(db: AsyncSession, chapter_id: str) -> None:
@@ -592,33 +508,92 @@ async def delete_shot_frame_image(
 
 
 @links_router.get(
-    "/actor",
-    response_model=ApiResponse[PaginatedData[ProjectActorLinkRead]],
-    summary="项目-章节-镜头-演员关联列表（分页）",
+    "/{entity_type}",
+    response_model=ApiResponse[PaginatedData[Any]],
+    summary="项目-章节-镜头-实体关联列表（分页）",
 )
-async def list_project_actor_links(
+async def list_project_entity_links(
+    entity_type: str,
     db: AsyncSession = Depends(get_db),
     project_id: str | None = Query(None),
     chapter_id: str | None = Query(None),
     shot_id: str | None = Query(None),
-    actor_id: str | None = Query(None),
+    asset_id: str | None = Query(None),
     order: str | None = Query(None),
     is_desc: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
-) -> ApiResponse[PaginatedData[ProjectActorLinkRead]]:
-    stmt = select(ProjectActorLink)
+) -> ApiResponse[PaginatedData[Any]]:
+    return await _list_project_asset_links(
+        entity_type=entity_type,
+        db=db,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        shot_id=shot_id,
+        asset_id=asset_id,
+        order=order,
+        is_desc=is_desc,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def _link_spec(entity_type: str) -> dict[str, Any]:
+    t = normalize_entity_type(entity_type)
+    if t == "actor":
+        return {"model": ProjectActorLink, "field": "actor_id", "read_model": ProjectActorLinkRead}
+    if t == "scene":
+        return {"model": ProjectSceneLink, "field": "scene_id", "read_model": ProjectSceneLinkRead}
+    if t == "prop":
+        return {"model": ProjectPropLink, "field": "prop_id", "read_model": ProjectPropLinkRead}
+    if t == "costume":
+        return {"model": ProjectCostumeLink, "field": "costume_id", "read_model": ProjectCostumeLinkRead}
+    raise HTTPException(status_code=400, detail="entity_type must be one of: actor/scene/prop/costume")
+
+
+async def _list_project_asset_links(
+    *,
+    entity_type: str,
+    db: AsyncSession,
+    project_id: str | None,
+    chapter_id: str | None,
+    shot_id: str | None,
+    asset_id: str | None,
+    order: str | None,
+    is_desc: bool,
+    page: int,
+    page_size: int,
+) -> ApiResponse[PaginatedData[Any]]:
+    spec = _link_spec(entity_type)
+    model = spec["model"]
+    field_name = spec["field"]
+
+    stmt = select(model)
     if project_id is not None:
-        stmt = stmt.where(ProjectActorLink.project_id == project_id)
+        stmt = stmt.where(model.project_id == project_id)
     if chapter_id is not None:
-        stmt = stmt.where(ProjectActorLink.chapter_id == chapter_id)
+        stmt = stmt.where(model.chapter_id == chapter_id)
     if shot_id is not None:
-        stmt = stmt.where(ProjectActorLink.shot_id == shot_id)
-    if actor_id is not None:
-        stmt = stmt.where(ProjectActorLink.actor_id == actor_id)
-    stmt = apply_order(stmt, model=ProjectActorLink, order=order, is_desc=is_desc, allow_fields=LINK_ORDER_FIELDS, default="id")
+        stmt = stmt.where(model.shot_id == shot_id)
+    if asset_id is not None:
+        stmt = stmt.where(getattr(model, field_name) == asset_id)
+    stmt = apply_order(stmt, model=model, order=order, is_desc=is_desc, allow_fields=LINK_ORDER_FIELDS, default="id")
     items, total = await paginate(db, stmt=stmt, page=page, page_size=page_size)
-    return paginated_response([ProjectActorLinkRead.model_validate(x) for x in items], page=page, page_size=page_size, total=total)
+
+    es = entity_spec(entity_type)
+    ids = [getattr(x, field_name) for x in items if getattr(x, field_name, None)]
+    thumbnails = await resolve_thumbnails(
+        db,
+        image_model=es["image_model"],
+        parent_field_name=es["id_field"],
+        parent_ids=ids,
+    )
+    read_model = spec["read_model"]
+    payload = [
+        read_model.model_validate(x).model_copy(update={"thumbnail": thumbnails.get(getattr(x, field_name), "")})
+        for x in items
+    ]
+    return paginated_response(payload, page=page, page_size=page_size, total=total)
 
 
 @links_router.post(
@@ -662,41 +637,6 @@ async def delete_project_actor_link(
     return success_response(None)
 
 
-@links_router.get(
-    "/scene",
-    response_model=ApiResponse[PaginatedData[ProjectSceneLinkRead]],
-    summary="项目-章节-镜头-场景关联列表（分页）",
-)
-async def list_project_scene_links(
-    db: AsyncSession = Depends(get_db),
-    project_id: str | None = Query(None),
-    chapter_id: str | None = Query(None),
-    shot_id: str | None = Query(None),
-    scene_id: str | None = Query(None),
-    order: str | None = Query(None),
-    is_desc: bool = Query(False),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
-) -> ApiResponse[PaginatedData[ProjectSceneLinkRead]]:
-    stmt = select(ProjectSceneLink)
-    if project_id is not None:
-        stmt = stmt.where(ProjectSceneLink.project_id == project_id)
-    if chapter_id is not None:
-        stmt = stmt.where(ProjectSceneLink.chapter_id == chapter_id)
-    if shot_id is not None:
-        stmt = stmt.where(ProjectSceneLink.shot_id == shot_id)
-    if scene_id is not None:
-        stmt = stmt.where(ProjectSceneLink.scene_id == scene_id)
-    stmt = apply_order(stmt, model=ProjectSceneLink, order=order, is_desc=is_desc, allow_fields=LINK_ORDER_FIELDS, default="id")
-    items, total = await paginate(db, stmt=stmt, page=page, page_size=page_size)
-    thumbnails = await _resolve_scene_thumbnails(db, scene_ids=[x.scene_id for x in items if x.scene_id])
-    payload = [
-        ProjectSceneLinkRead.model_validate(x).model_copy(update={"thumbnail": thumbnails.get(x.scene_id, "")})
-        for x in items
-    ]
-    return paginated_response(payload, page=page, page_size=page_size, total=total)
-
-
 @links_router.post(
     "/scene",
     response_model=ApiResponse[ProjectSceneLinkRead],
@@ -738,41 +678,6 @@ async def delete_project_scene_link(
     return success_response(None)
 
 
-@links_router.get(
-    "/prop",
-    response_model=ApiResponse[PaginatedData[ProjectPropLinkRead]],
-    summary="项目-章节-镜头-道具关联列表（分页）",
-)
-async def list_project_prop_links(
-    db: AsyncSession = Depends(get_db),
-    project_id: str | None = Query(None),
-    chapter_id: str | None = Query(None),
-    shot_id: str | None = Query(None),
-    prop_id: str | None = Query(None),
-    order: str | None = Query(None),
-    is_desc: bool = Query(False),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
-) -> ApiResponse[PaginatedData[ProjectPropLinkRead]]:
-    stmt = select(ProjectPropLink)
-    if project_id is not None:
-        stmt = stmt.where(ProjectPropLink.project_id == project_id)
-    if chapter_id is not None:
-        stmt = stmt.where(ProjectPropLink.chapter_id == chapter_id)
-    if shot_id is not None:
-        stmt = stmt.where(ProjectPropLink.shot_id == shot_id)
-    if prop_id is not None:
-        stmt = stmt.where(ProjectPropLink.prop_id == prop_id)
-    stmt = apply_order(stmt, model=ProjectPropLink, order=order, is_desc=is_desc, allow_fields=LINK_ORDER_FIELDS, default="id")
-    items, total = await paginate(db, stmt=stmt, page=page, page_size=page_size)
-    thumbnails = await _resolve_prop_thumbnails(db, prop_ids=[x.prop_id for x in items if x.prop_id])
-    payload = [
-        ProjectPropLinkRead.model_validate(x).model_copy(update={"thumbnail": thumbnails.get(x.prop_id, "")})
-        for x in items
-    ]
-    return paginated_response(payload, page=page, page_size=page_size, total=total)
-
-
 @links_router.post(
     "/prop",
     response_model=ApiResponse[ProjectPropLinkRead],
@@ -812,41 +717,6 @@ async def delete_project_prop_link(
     await db.delete(obj)
     await db.flush()
     return success_response(None)
-
-
-@links_router.get(
-    "/costume",
-    response_model=ApiResponse[PaginatedData[ProjectCostumeLinkRead]],
-    summary="项目-章节-镜头-服装关联列表（分页）",
-)
-async def list_project_costume_links(
-    db: AsyncSession = Depends(get_db),
-    project_id: str | None = Query(None),
-    chapter_id: str | None = Query(None),
-    shot_id: str | None = Query(None),
-    costume_id: str | None = Query(None),
-    order: str | None = Query(None),
-    is_desc: bool = Query(False),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
-) -> ApiResponse[PaginatedData[ProjectCostumeLinkRead]]:
-    stmt = select(ProjectCostumeLink)
-    if project_id is not None:
-        stmt = stmt.where(ProjectCostumeLink.project_id == project_id)
-    if chapter_id is not None:
-        stmt = stmt.where(ProjectCostumeLink.chapter_id == chapter_id)
-    if shot_id is not None:
-        stmt = stmt.where(ProjectCostumeLink.shot_id == shot_id)
-    if costume_id is not None:
-        stmt = stmt.where(ProjectCostumeLink.costume_id == costume_id)
-    stmt = apply_order(stmt, model=ProjectCostumeLink, order=order, is_desc=is_desc, allow_fields=LINK_ORDER_FIELDS, default="id")
-    items, total = await paginate(db, stmt=stmt, page=page, page_size=page_size)
-    thumbnails = await _resolve_costume_thumbnails(db, costume_ids=[x.costume_id for x in items if x.costume_id])
-    payload = [
-        ProjectCostumeLinkRead.model_validate(x).model_copy(update={"thumbnail": thumbnails.get(x.costume_id, "")})
-        for x in items
-    ]
-    return paginated_response(payload, page=page, page_size=page_size, total=total)
 
 
 @links_router.post(

@@ -53,7 +53,7 @@ class ScriptDividerRequest(BaseModel):
     summary="将剧本分割为多个镜头",
     description=(
         "输入完整剧本文本，输出分镜列表（index/start_line/end_line/script_excerpt/"
-        "scene_name/time_of_day/character_names_in_text）。"
+        "shot_name/scene_name/time_of_day/character_names_in_text）。"
         "注意：此阶段不强制稳定ID，角色以“称呼/名字”弱信息输出，稳定ID在合并阶段统一分配。"
     )
 )
@@ -68,7 +68,7 @@ async def divide_script(
     - script_text: 完整剧本文本
     
     返回：ScriptDivisionResult
-    - shots: 分镜列表，包含每个镜头的 index、起止行号、script_excerpt、scene_name、time_of_day、character_names_in_text
+    - shots: 分镜列表，包含每个镜头的 index、起止行号、shot_name、script_excerpt、scene_name、time_of_day、character_names_in_text
     - total_shots: 总镜头数
     - notes: 拆分说明（可选）
     """

@@ -1,14 +1,5 @@
-import { StudioAssetsService, StudioCastService, StudioImageTasksService } from '../../../services/generated'
-import type {
-  ActorImageRead,
-  ActorRead,
-  CostumeImageRead,
-  CostumeRead,
-  PropImageRead,
-  PropRead,
-  SceneImageRead,
-  SceneRead,
-} from '../../../services/generated'
+import { StudioImageTasksService } from '../../../services/generated'
+import { StudioEntitiesApi } from '../../../services/studioEntities'
 import type { AssetEditPageBaseProps, BaseAsset, BaseAssetImage } from './components/AssetEditPageBase'
 
 type AdapterConfig<TAsset extends BaseAsset, TImage extends BaseAssetImage> = Omit<
@@ -37,36 +28,22 @@ export const assetAdapters = {
     backTo: '/assets?tab=actor',
     relationType: 'actor_image',
     getAsset: async (id: string) => {
-      const res = await StudioCastService.getActorApiV1StudioCastActorsActorIdGet({ actorId: id })
-      return (res.data ?? null) as ActorRead | null
+      const res = await StudioEntitiesApi.get('actor', id)
+      return (res.data ?? null) as any | null
     },
     updateAsset: async (id: string, payload) => {
-      const res = await StudioCastService.updateActorApiV1StudioCastActorsActorIdPatch({
-        actorId: id,
-        requestBody: payload,
-      })
-      return (res.data ?? null) as ActorRead | null
+      const res = await StudioEntitiesApi.update('actor', id, payload as Record<string, unknown>)
+      return (res.data ?? null) as any | null
     },
     listImages: async (id: string) => {
-      const res = await StudioCastService.listActorImagesApiV1StudioCastActorsActorIdImagesGet({
-        actorId: id,
-        page: 1,
-        pageSize: 100,
-      })
-      return (res.data?.items ?? []) as ActorImageRead[]
+      const res = await StudioEntitiesApi.listImages('actor', id, { page: 1, pageSize: 100 })
+      return (res.data?.items ?? []) as any[]
     },
     createImageSlot: async (id: string, angle) => {
-      await StudioCastService.createActorImageApiV1StudioCastActorsActorIdImagesPost({
-        actorId: id,
-        requestBody: { view_angle: angle },
-      })
+      await StudioEntitiesApi.createImage('actor', id, { view_angle: angle })
     },
     updateImage: async (id: string, imageId: number, payload) => {
-      await StudioCastService.updateActorImageApiV1StudioCastActorsActorIdImagesImageIdPatch({
-        actorId: id,
-        imageId,
-        requestBody: normalizeUpdateImagePayload(payload),
-      })
+      await StudioEntitiesApi.updateImage('actor', id, imageId, normalizeUpdateImagePayload(payload))
     },
     createGenerationTask: async (id: string, imageId: number) => {
       const res = await StudioImageTasksService.createActorImageGenerationTaskApiV1StudioImageTasksActorsActorIdImageTasksPost({
@@ -75,43 +52,29 @@ export const assetAdapters = {
       })
       return res.data?.task_id ?? null
     },
-  } satisfies AdapterConfig<ActorRead, ActorImageRead>,
+  } satisfies AdapterConfig<any, any>,
   scene: {
     missingAssetIdText: '缺少 scene_id',
     assetDisplayName: '场景',
     backTo: '/assets?tab=scene',
     relationType: 'scene_image',
     getAsset: async (id: string) => {
-      const res = await StudioAssetsService.getSceneApiV1StudioAssetsScenesSceneIdGet({ sceneId: id })
-      return (res.data ?? null) as SceneRead | null
+      const res = await StudioEntitiesApi.get('scene', id)
+      return (res.data ?? null) as any | null
     },
     updateAsset: async (id: string, payload) => {
-      const res = await StudioAssetsService.updateSceneApiV1StudioAssetsScenesSceneIdPatch({
-        sceneId: id,
-        requestBody: payload,
-      })
-      return (res.data ?? null) as SceneRead | null
+      const res = await StudioEntitiesApi.update('scene', id, payload as Record<string, unknown>)
+      return (res.data ?? null) as any | null
     },
     listImages: async (id: string) => {
-      const res = await StudioAssetsService.listSceneImagesApiV1StudioAssetsScenesSceneIdImagesGet({
-        sceneId: id,
-        page: 1,
-        pageSize: 100,
-      })
-      return (res.data?.items ?? []) as SceneImageRead[]
+      const res = await StudioEntitiesApi.listImages('scene', id, { page: 1, pageSize: 100 })
+      return (res.data?.items ?? []) as any[]
     },
     createImageSlot: async (id: string, angle) => {
-      await StudioAssetsService.createSceneImageApiV1StudioAssetsScenesSceneIdImagesPost({
-        sceneId: id,
-        requestBody: { view_angle: angle },
-      })
+      await StudioEntitiesApi.createImage('scene', id, { view_angle: angle })
     },
     updateImage: async (id: string, imageId: number, payload) => {
-      await StudioAssetsService.updateSceneImageApiV1StudioAssetsScenesSceneIdImagesImageIdPatch({
-        sceneId: id,
-        imageId,
-        requestBody: normalizeUpdateImagePayload(payload),
-      })
+      await StudioEntitiesApi.updateImage('scene', id, imageId, normalizeUpdateImagePayload(payload))
     },
     createGenerationTask: async (id: string, imageId: number) => {
       const res = await StudioImageTasksService.createAssetImageGenerationTaskApiV1StudioImageTasksAssetsAssetTypeAssetIdImageTasksPost({
@@ -121,43 +84,29 @@ export const assetAdapters = {
       })
       return res.data?.task_id ?? null
     },
-  } satisfies AdapterConfig<SceneRead, SceneImageRead>,
+  } satisfies AdapterConfig<any, any>,
   prop: {
     missingAssetIdText: '缺少 prop_id',
     assetDisplayName: '道具',
     backTo: '/assets?tab=prop',
     relationType: 'prop_image',
     getAsset: async (id: string) => {
-      const res = await StudioAssetsService.getPropApiV1StudioAssetsPropsPropIdGet({ propId: id })
-      return (res.data ?? null) as PropRead | null
+      const res = await StudioEntitiesApi.get('prop', id)
+      return (res.data ?? null) as any | null
     },
     updateAsset: async (id: string, payload) => {
-      const res = await StudioAssetsService.updatePropApiV1StudioAssetsPropsPropIdPatch({
-        propId: id,
-        requestBody: payload,
-      })
-      return (res.data ?? null) as PropRead | null
+      const res = await StudioEntitiesApi.update('prop', id, payload as Record<string, unknown>)
+      return (res.data ?? null) as any | null
     },
     listImages: async (id: string) => {
-      const res = await StudioAssetsService.listPropImagesApiV1StudioAssetsPropsPropIdImagesGet({
-        propId: id,
-        page: 1,
-        pageSize: 100,
-      })
-      return (res.data?.items ?? []) as PropImageRead[]
+      const res = await StudioEntitiesApi.listImages('prop', id, { page: 1, pageSize: 100 })
+      return (res.data?.items ?? []) as any[]
     },
     createImageSlot: async (id: string, angle) => {
-      await StudioAssetsService.createPropImageApiV1StudioAssetsPropsPropIdImagesPost({
-        propId: id,
-        requestBody: { view_angle: angle },
-      })
+      await StudioEntitiesApi.createImage('prop', id, { view_angle: angle })
     },
     updateImage: async (id: string, imageId: number, payload) => {
-      await StudioAssetsService.updatePropImageApiV1StudioAssetsPropsPropIdImagesImageIdPatch({
-        propId: id,
-        imageId,
-        requestBody: normalizeUpdateImagePayload(payload),
-      })
+      await StudioEntitiesApi.updateImage('prop', id, imageId, normalizeUpdateImagePayload(payload))
     },
     createGenerationTask: async (id: string, imageId: number) => {
       const res = await StudioImageTasksService.createAssetImageGenerationTaskApiV1StudioImageTasksAssetsAssetTypeAssetIdImageTasksPost({
@@ -167,43 +116,29 @@ export const assetAdapters = {
       })
       return res.data?.task_id ?? null
     },
-  } satisfies AdapterConfig<PropRead, PropImageRead>,
+  } satisfies AdapterConfig<any, any>,
   costume: {
     missingAssetIdText: '缺少 costume_id',
     assetDisplayName: '服装',
     backTo: '/assets?tab=costume',
     relationType: 'costume_image',
     getAsset: async (id: string) => {
-      const res = await StudioAssetsService.getCostumeApiV1StudioAssetsCostumesCostumeIdGet({ costumeId: id })
-      return (res.data ?? null) as CostumeRead | null
+      const res = await StudioEntitiesApi.get('costume', id)
+      return (res.data ?? null) as any | null
     },
     updateAsset: async (id: string, payload) => {
-      const res = await StudioAssetsService.updateCostumeApiV1StudioAssetsCostumesCostumeIdPatch({
-        costumeId: id,
-        requestBody: payload,
-      })
-      return (res.data ?? null) as CostumeRead | null
+      const res = await StudioEntitiesApi.update('costume', id, payload as Record<string, unknown>)
+      return (res.data ?? null) as any | null
     },
     listImages: async (id: string) => {
-      const res = await StudioAssetsService.listCostumeImagesApiV1StudioAssetsCostumesCostumeIdImagesGet({
-        costumeId: id,
-        page: 1,
-        pageSize: 100,
-      })
-      return (res.data?.items ?? []) as CostumeImageRead[]
+      const res = await StudioEntitiesApi.listImages('costume', id, { page: 1, pageSize: 100 })
+      return (res.data?.items ?? []) as any[]
     },
     createImageSlot: async (id: string, angle) => {
-      await StudioAssetsService.createCostumeImageApiV1StudioAssetsCostumesCostumeIdImagesPost({
-        costumeId: id,
-        requestBody: { view_angle: angle },
-      })
+      await StudioEntitiesApi.createImage('costume', id, { view_angle: angle })
     },
     updateImage: async (id: string, imageId: number, payload) => {
-      await StudioAssetsService.updateCostumeImageApiV1StudioAssetsCostumesCostumeIdImagesImageIdPatch({
-        costumeId: id,
-        imageId,
-        requestBody: normalizeUpdateImagePayload(payload),
-      })
+      await StudioEntitiesApi.updateImage('costume', id, imageId, normalizeUpdateImagePayload(payload))
     },
     createGenerationTask: async (id: string, imageId: number) => {
       const res = await StudioImageTasksService.createAssetImageGenerationTaskApiV1StudioImageTasksAssetsAssetTypeAssetIdImageTasksPost({
@@ -213,6 +148,6 @@ export const assetAdapters = {
       })
       return res.data?.task_id ?? null
     },
-  } satisfies AdapterConfig<CostumeRead, CostumeImageRead>,
+  } satisfies AdapterConfig<any, any>,
 }
 

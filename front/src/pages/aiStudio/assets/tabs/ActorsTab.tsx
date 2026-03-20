@@ -1,23 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Input, InputNumber, Modal, Pagination, Space, Tag, message } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { StudioCastService } from '../../../../services/generated'
-import type { ActorRead } from '../../../../services/generated'
+import { StudioEntitiesApi } from '../../../../services/studioEntities'
 import { useNavigate } from 'react-router-dom'
 import { resolveAssetUrl } from '../utils'
 import { DisplayImageCard } from '../components/DisplayImageCard'
 
 export function ActorsTab() {
   const navigate = useNavigate()
-  const [actors, setActors] = useState<ActorRead[]>([])
+  const [actors, setActors] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(12)
+  const [pageSize, setPageSize] = useState(6)
   const [total, setTotal] = useState(0)
 
   const [editOpen, setEditOpen] = useState(false)
-  const [editing, setEditing] = useState<ActorRead | null>(null)
+  const [editing, setEditing] = useState<any | null>(null)
   const [formName, setFormName] = useState('')
   const [formDesc, setFormDesc] = useState('')
   const [formTags, setFormTags] = useState('')
@@ -29,7 +28,7 @@ export function ActorsTab() {
       const nextPage = opts?.page ?? page
       const nextPageSize = opts?.pageSize ?? pageSize
       const q = typeof opts?.q === 'string' ? opts.q : search.trim() || undefined
-      const res = await StudioCastService.listActorsApiV1StudioCastActorsGet({
+      const res = await StudioEntitiesApi.list('actor', {
         page: nextPage,
         pageSize: nextPageSize,
         q: q ?? null,
@@ -68,7 +67,7 @@ export function ActorsTab() {
     setEditOpen(true)
   }
 
-  const openEdit = (a: ActorRead) => {
+  const openEdit = (a: any) => {
     setEditing(a)
     setFormName(a.name)
     setFormDesc(a.description ?? '')
@@ -85,26 +84,21 @@ export function ActorsTab() {
     }
     try {
       if (!editing) {
-        await StudioCastService.createActorApiV1StudioCastActorsPost({
-          requestBody: {
-            id: crypto?.randomUUID?.() ?? `actor_${Date.now()}`,
-            name,
-            description: formDesc.trim() || undefined,
-            tags: normalizeTags(formTags),
-            view_count: formViewCount ?? undefined,
-            prompt_template_id: null,
-          },
+        await StudioEntitiesApi.create('actor', {
+          id: crypto?.randomUUID?.() ?? `actor_${Date.now()}`,
+          name,
+          description: formDesc.trim() || undefined,
+          tags: normalizeTags(formTags),
+          view_count: formViewCount ?? undefined,
+          prompt_template_id: null,
         })
         message.success('创建成功')
       } else {
-        await StudioCastService.updateActorApiV1StudioCastActorsActorIdPatch({
-          actorId: editing.id,
-          requestBody: {
-            name,
-            description: formDesc.trim() || null,
-            tags: normalizeTags(formTags),
-            view_count: formViewCount ?? null,
-          },
+        await StudioEntitiesApi.update('actor', editing.id, {
+          name,
+          description: formDesc.trim() || null,
+          tags: normalizeTags(formTags),
+          view_count: formViewCount ?? null,
         })
         message.success('更新成功')
       }
@@ -171,7 +165,7 @@ export function ActorsTab() {
                         okButtonProps: { danger: true },
                         onOk: async () => {
                           try {
-                            await StudioCastService.deleteActorApiV1StudioCastActorsActorIdDelete({ actorId: a.id })
+                            await StudioEntitiesApi.remove('actor', a.id)
                             message.success('已删除')
                             void load()
                           } catch {
@@ -187,7 +181,7 @@ export function ActorsTab() {
                 <div>
                   {a.description && <div className="text-xs text-gray-600 line-clamp-2">{a.description}</div>}
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {(a.tags ?? []).slice(0, 6).map((t) => (
+                    {(a.tags ?? []).slice(0, 6).map((t: string) => (
                       <Tag key={t} className="m-0">
                         {t}
                       </Tag>
@@ -205,8 +199,7 @@ export function ActorsTab() {
           current={page}
           pageSize={pageSize}
           total={total}
-          showSizeChanger
-          pageSizeOptions={[6, 12, 24, 48]}
+          showSizeChanger={false}
           onChange={(p, ps) => {
             setPage(p)
             setPageSize(ps)

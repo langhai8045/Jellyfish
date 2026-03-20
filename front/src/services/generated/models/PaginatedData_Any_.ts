@@ -2,13 +2,12 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { CharacterRead } from './CharacterRead';
 import type { Pagination } from './Pagination';
-export type PaginatedData_CharacterRead_ = {
+export type PaginatedData_Any_ = {
     /**
      * 当前页数据
      */
-    items: Array<CharacterRead>;
+    items: Array<any>;
     /**
      * 分页信息
      */

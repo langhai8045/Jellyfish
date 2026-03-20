@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, Input, InputNumber, Row, Col, Tag, Button, message, Modal, Space, Pagination } from 'antd'
 import { EditOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import type { AssetCreate, AssetUpdate } from '../../../../services/generated'
 import { resolveAssetUrl } from '../utils'
 import { DisplayImageCard } from '../components/DisplayImageCard'
 
@@ -24,7 +23,9 @@ export type StudioAssetLike = {
 function normalizeAsset(asset: StudioAssetLike): StudioAssetLike {
   return {
     ...asset,
-    thumbnail: resolveAssetUrl(asset.thumbnail),
+    // 保持原始 thumbnail 字段来源为接口返回的 item.thumbnail
+    // 渲染时再统一在 resolveAssetUrl 里做 URL/file_id 适配
+    thumbnail: asset.thumbnail,
   }
 }
 
@@ -33,11 +34,16 @@ function clampViewCount(value: number | null): number | null {
   return Math.max(0, Math.min(4, Math.trunc(value)))
 }
 
-type AssetMutationPayload = AssetUpdate & {
+type AssetMutationPayload = Record<string, unknown> & {
+  name: string
+  description?: string
+  tags?: string[]
+  view_count?: number | null
   thumbnail?: string
 }
 
-type AssetCreatePayload = AssetCreate & {
+type AssetCreatePayload = Record<string, unknown> & {
+  name: string
   thumbnail?: string
 }
 
@@ -60,7 +66,7 @@ export function AssetTypeTab({
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(12)
+  const [pageSize, setPageSize] = useState(6)
   const [total, setTotal] = useState(0)
 
   const [editOpen, setEditOpen] = useState(false)
@@ -279,8 +285,7 @@ export function AssetTypeTab({
             current={page}
             pageSize={pageSize}
             total={total}
-            showSizeChanger
-            pageSizeOptions={[8, 12, 24, 48]}
+            showSizeChanger={false}
             showTotal={(t) => `共 ${t} 条`}
             onChange={(p, ps) => {
               setPage(p)

@@ -103,7 +103,7 @@ export function ChapterShotsPage() {
   }
 
   return (
-    <Card title="分镜" styles={{ body: { padding: 12 } }}>
+    <Card title="分镜" style={{ padding: 0 }}>
       <div className="flex gap-3 h-full min-h-0" style={{ height: 'calc(100vh - 170px)' }}>
         <div
           className="shrink-0 min-w-0"

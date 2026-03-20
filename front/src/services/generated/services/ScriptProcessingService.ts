@@ -23,7 +23,7 @@ import { request as __request } from '../core/request';
 export class ScriptProcessingService {
     /**
      * 将剧本分割为多个镜头
-     * 输入完整剧本文本，输出分镜列表（index/start_line/end_line/script_excerpt/scene_name/time_of_day/character_names_in_text）。注意：此阶段不强制稳定ID，角色以“称呼/名字”弱信息输出，稳定ID在合并阶段统一分配。
+     * 输入完整剧本文本，输出分镜列表（index/start_line/end_line/script_excerpt/shot_name/scene_name/time_of_day/character_names_in_text）。注意：此阶段不强制稳定ID，角色以“称呼/名字”弱信息输出，稳定ID在合并阶段统一分配。
      * @returns ApiResponse_ScriptDivisionResult_ Successful Response
      * @throws ApiError
      */

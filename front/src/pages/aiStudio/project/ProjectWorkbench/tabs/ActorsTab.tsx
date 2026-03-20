@@ -2,11 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Image, Input, Modal, Space, message } from 'antd'
 import { LinkOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
-import { StudioCastService, StudioShotLinksService } from '../../../../../services/generated'
-import type { ActorRead, ProjectActorLinkRead } from '../../../../../services/generated'
+import { StudioShotLinksService } from '../../../../../services/generated'
+import type { ProjectActorLinkRead } from '../../../../../services/generated'
+import { StudioEntitiesApi } from '../../../../../services/studioEntities'
 import { useProjectCharacters } from '../hooks/useProjectData'
 import { resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
+
+type ActorLike = {
+  id: string
+  name: string
+  description?: string | null
+  thumbnail?: string
+}
 
 export function ActorsTab() {
   const navigate = useNavigate()
@@ -14,7 +22,7 @@ export function ActorsTab() {
   useProjectCharacters(projectId)
 
   const [linkModalOpen, setLinkModalOpen] = useState(false)
-  const [actors, setActors] = useState<ActorRead[]>([])
+  const [actors, setActors] = useState<ActorLike[]>([])
   const [actorsLoading, setActorsLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [linkingId, setLinkingId] = useState<string | null>(null)
@@ -31,17 +39,18 @@ export function ActorsTab() {
     if (!projectId) return
     setLinksLoading(true)
     try {
-      const res = await StudioShotLinksService.listProjectActorLinksApiV1StudioShotLinksActorGet({
+      const res = await StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'actor',
         projectId,
         chapterId: null,
         shotId: null,
-        actorId: null,
+        assetId: null,
         order: null,
         isDesc: false,
         page: 1,
         pageSize: 100,
       })
-      setLinks(res.data?.items ?? [])
+      setLinks((res.data?.items ?? []) as ProjectActorLinkRead[])
     } catch {
       message.error('加载项目演员关联失败')
       setLinks([])
@@ -54,14 +63,14 @@ export function ActorsTab() {
     setActorsLoading(true)
     try {
       const q = searchQuery !== undefined ? searchQuery : search
-      const res = await StudioCastService.listActorsApiV1StudioCastActorsGet({
+      const res = await StudioEntitiesApi.list('actor', {
         page: 1,
         pageSize: 100,
         q: q?.trim() || undefined,
         order: 'updated_at',
         isDesc: true,
       })
-      setActors(res.data?.items ?? [])
+      setActors((res.data?.items ?? []) as ActorLike[])
     } catch {
       message.error('加载演员失败')
       setActors([])
@@ -80,7 +89,7 @@ export function ActorsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
-  const handleLinkActor = async (actor: ActorRead) => {
+  const handleLinkActor = async (actor: ActorLike) => {
     if (!projectId) return
     setLinkingId(actor.id)
     try {
@@ -120,7 +129,7 @@ export function ActorsTab() {
   }
 
   const linkedByActorId = useMemo(() => {
-    const map = new Map<string, ActorRead>()
+    const map = new Map<string, ActorLike>()
     actors.forEach((a) => map.set(a.id, a))
     return map
   }, [actors])
@@ -131,14 +140,14 @@ export function ActorsTab() {
     if (missing.length === 0) return
     void (async () => {
       try {
-        const res = await StudioCastService.listActorsApiV1StudioCastActorsGet({
+        const res = await StudioEntitiesApi.list('actor', {
           page: 1,
           pageSize: 100,
           q: null,
           order: null,
           isDesc: false,
         })
-        const items = res.data?.items ?? []
+        const items = (res.data?.items ?? []) as ActorLike[]
         setActors((prev) => {
           const map = new Map(prev.map((a) => [a.id, a]))
           items.forEach((a) => map.set(a.id, a))

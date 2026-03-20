@@ -38,7 +38,7 @@ class CharacterBase(BaseModel):
     project_id: str = Field(..., description="所属项目 ID")
     name: str = Field(..., description="角色名称")
     description: str = Field("", description="角色描述")
-    actor_id: str = Field(..., description="演员 ID")
+    actor_id: str | None = Field(None, description="演员 ID（可空；用于仅导入角色文案但不关联演员时）")
     costume_id: str | None = Field(None, description="服装 ID（可空）")
 
 

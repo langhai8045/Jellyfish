@@ -750,7 +750,7 @@ class Character(Base, TimestampMixin):
     actor_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("actors.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
         comment="对应演员 ID",
     )

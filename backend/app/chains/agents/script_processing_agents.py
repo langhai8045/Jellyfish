@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from app.chains.agents.base import SkillAgentBase
+from app.chains.agents.base import SkillAgentBase, _extract_json_from_text
 from app.core.skills_runtime import schemas as sp_schemas
 
 # 统一输出模型来源：严格 schema 在 schemas.py
@@ -54,17 +55,65 @@ class ScriptDividerAgent(SkillAgentBase[ScriptDivisionResult]):
         self._skill_id = skill_id
         self._structured_chain = None
 
+    def format_output(self, raw: str) -> ScriptDivisionResult:
+        """
+        更强的兜底解析：
+        LLM 可能输出：
+        - 正常结构：{shots:[...], total_shots:N}
+        - 包裹结构：{"ScriptDivisionResult": {...}}
+        - 直接列表：[{...}, {...}]（视为 shots）
+        """
+        self._ensure_loaded()
+        assert self._output_model is not None
+
+        json_str = _extract_json_from_text(raw)
+        data: Any = json.loads(json_str)
+
+        if isinstance(data, list):
+            data = {"shots": data}
+        elif isinstance(data, dict) and "ScriptDivisionResult" in data:
+            inner = data.get("ScriptDivisionResult")
+            if isinstance(inner, list):
+                data = {"shots": inner}
+            elif isinstance(inner, dict):
+                data = inner
+            else:
+                data = {"shots": []}
+
+        if isinstance(data, dict):
+            data = self._normalize(data)
+
+        return self._output_model.model_validate(data)  # type: ignore[arg-type]
+
     def _normalize(self, data: dict[str, Any]) -> dict[str, Any]:
         """规范化脚本分割结果。"""
         data = dict(data)
+
+        # 兼容：LLM 可能输出 {"ScriptDivisionResult": {...}} 或 {"ScriptDivisionResult": [...]}
+        if "ScriptDivisionResult" in data:
+            inner = data.get("ScriptDivisionResult")
+            if isinstance(inner, list):
+                data = {"shots": inner}
+            elif isinstance(inner, dict):
+                data = dict(inner)
+            else:
+                data = {"shots": []}
+
         if "shots" in data and isinstance(data["shots"], list):
             shots = []
             for idx, shot in enumerate(data["shots"]):
                 shot_dict: dict[str, Any] = (
-                    dict(shot) if isinstance(shot, dict) else {"script_excerpt": str(shot)}
+                    dict(shot) if isinstance(shot, dict) else {"script_excerpt": str(shot), "shot_name": ""}
                 )
                 if "index" not in shot_dict:
                     shot_dict["index"] = idx + 1
+                # 兼容：LLM 可能用 title/shot_title 代替 shot_name
+                if "shot_name" not in shot_dict:
+                    if "title" in shot_dict:
+                        shot_dict["shot_name"] = str(shot_dict.pop("title"))
+                    elif "shot_title" in shot_dict:
+                        shot_dict["shot_name"] = str(shot_dict.pop("shot_title"))
+                shot_dict.setdefault("shot_name", "")
                 # 兼容旧字段：character_ids -> character_names_in_text（此阶段为弱信息）
                 if "character_ids" in shot_dict and "character_names_in_text" not in shot_dict:
                     val = shot_dict.get("character_ids")

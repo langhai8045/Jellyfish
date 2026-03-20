@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { PaginatedData_ProjectActorLinkRead_ } from './PaginatedData_ProjectActorLinkRead_';
-export type ApiResponse_PaginatedData_ProjectActorLinkRead__ = {
+import type { PaginatedData_dict_str__Any__ } from './PaginatedData_dict_str__Any__';
+export type ApiResponse_PaginatedData_dict_str__Any___ = {
     /**
      * 与 HTTP 状态码一致
      */
@@ -15,6 +15,6 @@ export type ApiResponse_PaginatedData_ProjectActorLinkRead__ = {
     /**
      * 实际数据
      */
-    data?: (PaginatedData_ProjectActorLinkRead_ | null);
+    data?: (PaginatedData_dict_str__Any__ | null);
 };
 

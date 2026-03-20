@@ -182,11 +182,6 @@ export default function ExtractProjectStep() {
             ) : (
               <div className="space-y-3">
                 <div>
-                  <div className="text-xs text-gray-600 mb-1">标题</div>
-                  <Input value={selectedShot.title ?? ''} onChange={(e) => setSelectedShotPatch({ title: e.target.value })} />
-                </div>
-
-                <div>
                   <div className="text-xs text-gray-600 mb-1">剧本摘录</div>
                   <Input.TextArea
                     value={selectedShot.script_excerpt ?? ''}
@@ -197,14 +192,22 @@ export default function ExtractProjectStep() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
+                    <div className="text-xs text-gray-600 mb-1">分镜名</div>
+                    <Input value={selectedShot.title ?? ''} onChange={(e) => setSelectedShotPatch({ title: e.target.value })} />
+                  </div>
+                  <div>
                     <div className="text-xs text-gray-600 mb-1">场景名</div>
                     <Input value={selectedShot.scene_name ?? ''} onChange={(e) => setSelectedShotPatch({ scene_name: e.target.value })} />
                   </div>
-                  <div>
+                  <div className="md:col-span-2">
                     <div className="text-xs text-gray-600 mb-1">动作（每行一条）</div>
                     <Input.TextArea
                       value={Array.isArray(selectedShot.actions) ? selectedShot.actions.join('\\n') : ''}
-                      onChange={(e) => setSelectedShotPatch({ actions: e.target.value.split('\\n').map((x) => x.trim()).filter(Boolean) })}
+                      onChange={(e) =>
+                        setSelectedShotPatch({
+                          actions: e.target.value.split('\\n').map((x) => x.trim()).filter(Boolean),
+                        })
+                      }
                       autoSize={{ minRows: 2, maxRows: 6 }}
                     />
                   </div>

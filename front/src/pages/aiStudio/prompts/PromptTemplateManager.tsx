@@ -13,8 +13,8 @@ const fallbackCategoryLabels: Record<string, string> = {
   storyboard: '分镜',
   bgm: '配乐',
   sfx: '音效',
-  chapter_front: '章节正面',
-  chapter_other: '章节其他',
+  character_front: '角色正面',
+  character_other: '角色其他',
   actor_image_front: '角色正面',
   actor_image_other: '角色其他',
   prop_front: '道具正面',
@@ -36,8 +36,8 @@ const defaultPromptCategories: PromptCategory[] = [
   'storyboard',
   'bgm',
   'sfx',
-  'chapter_front',
-  'chapter_other',
+  'character_front',
+  'character_other',
   'actor_image_front',
   'actor_image_other',
   'prop_front',
@@ -77,7 +77,7 @@ const groupTitles: Record<(typeof groupOrder)[number], string> = {
   frame: '首/尾/关键帧',
   video: '视频生成 / 分镜',
   audio: '配乐 / 音效 / 角色',
-  chapter: '章节',
+  chapter: '角色',
   actor: '角色形象',
   scene: '场景',
   prop: '道具',
@@ -90,7 +90,7 @@ function getGroupKey(category: string): (typeof groupOrder)[number] {
   if (['frame_head', 'frame_tail', 'frame_key'].includes(category)) return 'frame'
   if (['video', 'storyboard'].includes(category)) return 'video'
   if (['bgm', 'sfx'].includes(category)) return 'audio'
-  if (category.startsWith('chapter_')) return 'chapter'
+  if (category.startsWith('character_')) return 'chapter'
   if (category.startsWith('actor_image')) return 'actor'
   if (category.startsWith('scene_')) return 'scene'
   if (category.startsWith('prop_')) return 'prop'

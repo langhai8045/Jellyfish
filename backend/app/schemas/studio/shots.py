@@ -149,6 +149,7 @@ class ProjectAssetLinkCreate(BaseModel):
 
 class ProjectActorLinkRead(ProjectLinkBase):
     actor_id: str
+    thumbnail: str = Field("", description="演员缩略图下载地址")
 
     class Config:
         from_attributes = True

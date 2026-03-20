@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { PaginatedData_CostumeImageRead_ } from './PaginatedData_CostumeImageRead_';
-export type ApiResponse_PaginatedData_CostumeImageRead__ = {
+import type { PaginatedData_Any_ } from './PaginatedData_Any_';
+export type ApiResponse_PaginatedData_Any__ = {
     /**
      * 与 HTTP 状态码一致
      */
@@ -15,6 +15,6 @@ export type ApiResponse_PaginatedData_CostumeImageRead__ = {
     /**
      * 实际数据
      */
-    data?: (PaginatedData_CostumeImageRead_ | null);
+    data?: (PaginatedData_Any_ | null);
 };
 

@@ -319,41 +319,15 @@ async def import_from_extraction(
 
     await db.flush()
 
-    # --- Ensure Actor for each character (name is globally unique) ---
-    actor_by_name: dict[str, str] = {}
-    for c in body.characters:
-        actor_name = c.name
-        stmt = select(Actor.id).where(Actor.name == actor_name)
-        existing_actor_id = (await db.execute(stmt)).scalar_one_or_none()
-        if existing_actor_id is not None:
-            actor_by_name[actor_name] = existing_actor_id
-            continue
-
-        actor_id = _new_id("actor")
-        actor_by_name[actor_name] = actor_id
-        db.add(
-            Actor(
-                id=actor_id,
-                name=actor_name,
-                description=c.description,
-                tags=[],
-                prompt_template_id=None,
-                view_count=1,
-            )
-        )
-
-    await db.flush()
-
     # --- Create / overwrite characters ---
     for c in body.characters:
         costume_id = costume_by_name.get(c.costume_name) if c.costume_name else None
-        actor_id = actor_by_name[c.name]
         existing_id = await _get_character_id_by_name(db, project_id=body.project_id, name=c.name)
         if existing_id is not None and body.force_overwrite:
             obj = await db.get(Character, existing_id)
             assert obj is not None
             obj.description = c.description
-            obj.actor_id = actor_id
+            obj.actor_id = None
             obj.costume_id = costume_id
             character_by_name[c.name] = existing_id
             created_counts["updated_characters"] += 1
@@ -367,7 +341,7 @@ async def import_from_extraction(
                     project_id=body.project_id,
                     name=c.name,
                     description=c.description,
-                    actor_id=actor_id,
+                    actor_id=None,
                     costume_id=costume_id,
                 )
             )

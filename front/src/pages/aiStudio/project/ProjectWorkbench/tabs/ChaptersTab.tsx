@@ -130,7 +130,7 @@ export function ChaptersTab() {
             size="small"
             onClick={() => goPrep(record.id, record.storyboardCount)}
           >
-            拍摄准备
+            信息提取
           </Button>
           <Button
             type="link"

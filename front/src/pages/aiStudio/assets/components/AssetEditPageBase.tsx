@@ -17,12 +17,29 @@ import {
 } from 'antd'
 import { ArrowLeftOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons'
 import { FilmService } from '../../../../services/generated'
-import type { AssetUpdate, AssetViewAngle, TaskStatus } from '../../../../services/generated'
+import type { TaskStatus } from '../../../../services/generated'
 import { listTaskLinksNormalized } from '../../../../services/filmTaskLinks'
 import { buildFileDownloadUrl } from '../utils'
 import { DisplayImageCard } from './DisplayImageCard'
 
 const MAX_VIEW_COUNT = 4
+// 与后端 `AssetViewAngle`（backend/app/models/studio.py）一致的枚举值
+export type AssetViewAngle =
+  | 'FRONT'
+  | 'LEFT'
+  | 'RIGHT'
+  | 'BACK'
+  | 'THREE_QUARTER'
+  | 'TOP'
+  | 'DETAIL'
+
+export type AssetUpdate = {
+  name: string
+  description: string
+  tags: string[]
+  view_count: number
+}
+
 const DEFAULT_ANGLES: AssetViewAngle[] = ['FRONT', 'LEFT', 'RIGHT', 'BACK']
 
 const ANGLE_LABEL_MAP: Record<AssetViewAngle, string> = {

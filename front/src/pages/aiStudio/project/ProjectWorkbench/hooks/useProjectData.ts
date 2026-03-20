@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { projects as mockProjects, chapters as mockChapters, type Project, type Chapter as MockChapter } from '../../../../../mocks/data'
-import { StudioCastService, StudioChaptersService, StudioProjectsService } from '../../../../../services/generated'
-import type { CharacterRead, ChapterRead, ProjectRead } from '../../../../../services/generated'
+import { StudioChaptersService, StudioProjectsService } from '../../../../../services/generated'
+import type { ChapterRead, ProjectRead } from '../../../../../services/generated'
+import { StudioEntitiesApi } from '../../../../../services/studioEntities'
 
 const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
@@ -133,7 +134,7 @@ export function useChapters(projectId: string | undefined) {
 }
 
 export function useProjectCharacters(projectId: string | undefined) {
-  const [characters, setCharacters] = useState<CharacterRead[]>([])
+  const [characters, setCharacters] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -144,12 +145,12 @@ export function useProjectCharacters(projectId: string | undefined) {
     }
     setLoading(true)
     try {
-      const res = await StudioCastService.listCharactersApiV1StudioCastCharactersGet({
-        projectId,
+      const res = await StudioEntitiesApi.list('character', {
         page: 1,
         pageSize: 100,
+        q: null,
       })
-      const items = res.data?.items ?? []
+      const items = (res.data?.items ?? []).filter((x) => x.project_id === projectId)
       setCharacters(items)
     } catch {
       setCharacters([])

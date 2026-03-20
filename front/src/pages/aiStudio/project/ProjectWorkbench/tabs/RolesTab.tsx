@@ -2,11 +2,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card, Button, Empty, Modal, Input, message, Space, Select } from 'antd'
 import { PlusOutlined, UserOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
-import { StudioAssetsService, StudioCastService, StudioShotLinksService } from '../../../../../services/generated'
-import type { ActorRead, CostumeRead, ProjectActorLinkRead, ProjectCostumeLinkRead } from '../../../../../services/generated'
+import { StudioShotLinksService } from '../../../../../services/generated'
+import type { ProjectActorLinkRead, ProjectCostumeLinkRead } from '../../../../../services/generated'
 import { useProjectCharacters, newId } from '../hooks/useProjectData'
 import { resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
+import { StudioEntitiesApi } from '../../../../../services/studioEntities'
+
+type ActorLike = {
+  id: string
+  name: string
+  description?: string | null
+  thumbnail?: string
+}
+
+type CostumeLike = {
+  id: string
+  name: string
+  description?: string | null
+  thumbnail?: string
+}
 
 export function RolesTab() {
   const navigate = useNavigate()
@@ -22,8 +37,8 @@ export function RolesTab() {
 
   const [projectActorLinks, setProjectActorLinks] = useState<ProjectActorLinkRead[]>([])
   const [projectCostumeLinks, setProjectCostumeLinks] = useState<ProjectCostumeLinkRead[]>([])
-  const [actorsById, setActorsById] = useState<Record<string, ActorRead>>({})
-  const [costumesById, setCostumesById] = useState<Record<string, CostumeRead>>({})
+  const [actorsById, setActorsById] = useState<Record<string, ActorLike>>({})
+  const [costumesById, setCostumesById] = useState<Record<string, CostumeLike>>({})
   const [loadingLinks, setLoadingLinks] = useState(false)
 
   const loadProjectLinks = async () => {
@@ -31,29 +46,31 @@ export function RolesTab() {
     setLoadingLinks(true)
     try {
       const [actorRes, costumeRes] = await Promise.all([
-        StudioShotLinksService.listProjectActorLinksApiV1StudioShotLinksActorGet({
+        StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+          entityType: 'actor',
           projectId,
           chapterId: null,
           shotId: null,
-          actorId: null,
+          assetId: null,
           order: null,
           isDesc: false,
           page: 1,
           pageSize: 100,
         }),
-        StudioShotLinksService.listProjectCostumeLinksApiV1StudioShotLinksCostumeGet({
+        StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+          entityType: 'costume',
           projectId,
           chapterId: null,
           shotId: null,
-          costumeId: null,
+          assetId: null,
           order: null,
           isDesc: false,
           page: 1,
           pageSize: 100,
         }),
       ])
-      const actorLinks = actorRes.data?.items ?? []
-      const costumeLinks = costumeRes.data?.items ?? []
+      const actorLinks = (actorRes.data?.items ?? []) as ProjectActorLinkRead[]
+      const costumeLinks = (costumeRes.data?.items ?? []) as ProjectCostumeLinkRead[]
       setProjectActorLinks(actorLinks)
       setProjectCostumeLinks(costumeLinks)
 
@@ -61,17 +78,29 @@ export function RolesTab() {
       const costumeIds = Array.from(new Set(costumeLinks.map((l) => l.costume_id)))
 
       const [actors, costumes] = await Promise.all([
-        Promise.all(actorIds.map((id) => StudioCastService.getActorApiV1StudioCastActorsActorIdGet({ actorId: id }).then((r) => r.data).catch(() => null))),
-        Promise.all(costumeIds.map((id) => StudioAssetsService.getCostumeApiV1StudioAssetsCostumesCostumeIdGet({ costumeId: id }).then((r) => r.data).catch(() => null))),
+        Promise.all(
+          actorIds.map((id) =>
+            StudioEntitiesApi.get('actor', id)
+              .then((r) => (r.data ?? null) as ActorLike | null)
+              .catch(() => null),
+          ),
+        ),
+        Promise.all(
+          costumeIds.map((id) =>
+            StudioEntitiesApi.get('costume', id)
+              .then((r) => (r.data ?? null) as CostumeLike | null)
+              .catch(() => null),
+          ),
+        ),
       ])
 
-      const nextActors: Record<string, ActorRead> = {}
+      const nextActors: Record<string, ActorLike> = {}
       actors.filter(Boolean).forEach((a) => {
-        nextActors[(a as ActorRead).id] = a as ActorRead
+        nextActors[(a as ActorLike).id] = a as ActorLike
       })
-      const nextCostumes: Record<string, CostumeRead> = {}
+      const nextCostumes: Record<string, CostumeLike> = {}
       costumes.filter(Boolean).forEach((c) => {
-        nextCostumes[(c as CostumeRead).id] = c as CostumeRead
+        nextCostumes[(c as CostumeLike).id] = c as CostumeLike
       })
       setActorsById(nextActors)
       setCostumesById(nextCostumes)
@@ -104,15 +133,13 @@ export function RolesTab() {
     }
     setCreating(true)
     try {
-      await StudioCastService.createCharacterApiV1StudioCastCharactersPost({
-        requestBody: {
-          id: newId('char'),
-          project_id: projectId,
-          name,
-          description: formDesc.trim() || undefined,
-          actor_id: formActorId,
-          costume_id: formCostumeId ?? null,
-        },
+      await StudioEntitiesApi.create('character', {
+        id: newId('char'),
+        project_id: projectId,
+        name,
+        description: formDesc.trim() || undefined,
+        actor_id: formActorId,
+        costume_id: formCostumeId ?? null,
       })
       message.success('角色创建成功')
       setCreateOpen(false)
@@ -244,7 +271,7 @@ export function RolesTab() {
                           okButtonProps: { danger: true },
                           onOk: async () => {
                             try {
-                              await StudioCastService.deleteCharacterApiV1StudioCastCharactersCharacterIdDelete({ characterId: c.id })
+                              await StudioEntitiesApi.remove('character', c.id)
                               message.success('已删除')
                               await refresh()
                             } catch {

@@ -71,14 +71,14 @@ import type {
   CameraMovement,
   CameraShotType,
   ChapterRead,
-  ShotActorImageLinkRead,
-  ShotCostumeLinkRead,
+  ProjectActorLinkRead,
+  ProjectCostumeLinkRead,
   ShotDetailRead,
   ShotDialogLineRead,
   ShotFrameImageRead,
-  ShotPropLinkRead,
+  ProjectPropLinkRead,
   ShotRead,
-  ShotSceneLinkRead,
+  ProjectSceneLinkRead,
   ShotStatus,
 } from '../../../services/generated'
 import type { Chapter } from '../../../mocks/data'
@@ -228,10 +228,10 @@ const ChapterStudio: React.FC = () => {
   const [shotDetail, setShotDetail] = useState<ShotDetailRead | null>(null)
   const [dialogLines, setDialogLines] = useState<ShotDialogLineRead[]>([])
   const [frameImages, setFrameImages] = useState<ShotFrameImageRead[]>([])
-  const [sceneLinks, setSceneLinks] = useState<ShotSceneLinkRead[]>([])
-  const [actorImageLinks, setActorImageLinks] = useState<ShotActorImageLinkRead[]>([])
-  const [propLinks, setPropLinks] = useState<ShotPropLinkRead[]>([])
-  const [costumeLinks, setCostumeLinks] = useState<ShotCostumeLinkRead[]>([])
+  const [sceneLinks, setSceneLinks] = useState<ProjectSceneLinkRead[]>([])
+  const [actorImageLinks, setActorImageLinks] = useState<ProjectActorLinkRead[]>([])
+  const [propLinks, setPropLinks] = useState<ProjectPropLinkRead[]>([])
+  const [costumeLinks, setCostumeLinks] = useState<ProjectCostumeLinkRead[]>([])
   const [shotDurations, setShotDurations] = useState<Record<string, number>>({})
   const [loadingShots, setLoadingShots] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -367,7 +367,7 @@ const ChapterStudio: React.FC = () => {
     }
     setLoadingDetail(true)
     Promise.all([
-      StudioShotDetailsService.getShotDetailApiV1StudioShotDetailsShotIdGet({ shotId: selectedShotId }).then((r) => r.data ?? null),
+      StudioShotDetailsService.getShotDetailApiV1StudioShotDetailsShotIdGet({ shotId: selectedShotId }).then((r: any) => r.data ?? null),
       StudioShotDialogLinesService.listShotDialogLinesApiV1StudioShotDialogLinesGet({
         shotDetailId: selectedShotId,
         q: null,
@@ -375,26 +375,58 @@ const ChapterStudio: React.FC = () => {
         isDesc: false,
         page: 1,
         pageSize: 100,
-      }).then((r) => r.data?.items ?? []),
+      }).then((r: any) => r.data?.items ?? []),
       StudioShotFrameImagesService.listShotFrameImagesApiV1StudioShotFrameImagesGet({
         shotDetailId: selectedShotId,
         order: null,
         isDesc: false,
         page: 1,
         pageSize: 100,
-      }).then((r) => r.data?.items ?? []),
-      StudioShotLinksService.listShotSceneLinksApiV1StudioShotLinksSceneGet({ shotId: selectedShotId, sceneId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
-      StudioShotLinksService.listShotActorImageLinksApiV1StudioShotLinksActorImageGet({ shotId: selectedShotId, actorImageId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
-      StudioShotLinksService.listShotPropLinksApiV1StudioShotLinksPropGet({ shotId: selectedShotId, propId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
-      StudioShotLinksService.listShotCostumeLinksApiV1StudioShotLinksCostumeGet({ shotId: selectedShotId, costumeId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'scene',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId: selectedShotId,
+        assetId: null,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'actor',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId: selectedShotId,
+        assetId: null,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'prop',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId: selectedShotId,
+        assetId: null,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'costume',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId: selectedShotId,
+        assetId: null,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+      }).then((r: any) => r.data?.items ?? []),
     ])
       .then(([detail, dialogs, frames, scenes, actors, props, costumes]) => {
         setShotDetail(detail)
@@ -483,18 +515,50 @@ const ChapterStudio: React.FC = () => {
 
   const refreshLinks = async (shotId: string) => {
     const [scenes, actors, props, costumes] = await Promise.all([
-      StudioShotLinksService.listShotSceneLinksApiV1StudioShotLinksSceneGet({ shotId, sceneId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
-      StudioShotLinksService.listShotActorImageLinksApiV1StudioShotLinksActorImageGet({ shotId, actorImageId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
-      StudioShotLinksService.listShotPropLinksApiV1StudioShotLinksPropGet({ shotId, propId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
-      StudioShotLinksService.listShotCostumeLinksApiV1StudioShotLinksCostumeGet({ shotId, costumeId: null, order: null, isDesc: false, page: 1, pageSize: 100 }).then(
-        (r) => r.data?.items ?? [],
-      ),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'scene',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+        assetId: null,
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'actor',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+        assetId: null,
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'prop',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+        assetId: null,
+      }).then((r: any) => r.data?.items ?? []),
+      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: 'costume',
+        projectId: projectId ?? null,
+        chapterId: chapterId ?? null,
+        shotId,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+        assetId: null,
+      }).then((r: any) => r.data?.items ?? []),
     ])
     setSceneLinks(scenes)
     setActorImageLinks(actors)
@@ -504,13 +568,30 @@ const ChapterStudio: React.FC = () => {
 
   const addLink = async (type: 'scene' | 'actor-image' | 'prop' | 'costume', assetId: string) => {
     if (!selectedShotId) return
+    if (!projectId) {
+      message.error('缺少项目ID')
+      return
+    }
     const v = assetId.trim()
     if (!v) return
-    const body = { shot_id: selectedShotId, asset_id: v }
-    if (type === 'scene') await StudioShotLinksService.createShotSceneLinkApiV1StudioShotLinksScenePost({ requestBody: body })
-    if (type === 'actor-image') await StudioShotLinksService.createShotActorImageLinkApiV1StudioShotLinksActorImagePost({ requestBody: body })
-    if (type === 'prop') await StudioShotLinksService.createShotPropLinkApiV1StudioShotLinksPropPost({ requestBody: body })
-    if (type === 'costume') await StudioShotLinksService.createShotCostumeLinkApiV1StudioShotLinksCostumePost({ requestBody: body })
+    const requestBody = {
+      project_id: projectId,
+      chapter_id: chapterId ?? null,
+      shot_id: selectedShotId,
+      asset_id: v,
+    }
+    if (type === 'scene') {
+      await StudioShotLinksService.createProjectSceneLinkApiV1StudioShotLinksScenePost({ requestBody })
+    }
+    if (type === 'actor-image') {
+      await StudioShotLinksService.createProjectActorLinkApiV1StudioShotLinksActorPost({ requestBody })
+    }
+    if (type === 'prop') {
+      await StudioShotLinksService.createProjectPropLinkApiV1StudioShotLinksPropPost({ requestBody })
+    }
+    if (type === 'costume') {
+      await StudioShotLinksService.createProjectCostumeLinkApiV1StudioShotLinksCostumePost({ requestBody })
+    }
     await refreshLinks(selectedShotId)
   }
 
@@ -595,7 +676,7 @@ const ChapterStudio: React.FC = () => {
         shotId: selectedShotId,
         requestBody: patch as any,
       })
-        .then((r) => {
+        .then((r: any) => {
           if (r.data) {
             setShotDetail(r.data)
             lastSavedDetailRef.current = r.data
@@ -1747,10 +1828,10 @@ function Inspector(props: {
   frameImages: ShotFrameImageRead[]
   onAddFrameImage: (frameType: 'first' | 'key' | 'last', fileId: string) => Promise<void>
   onDeleteFrameImage: (imageId: number) => Promise<void>
-  sceneLinks: ShotSceneLinkRead[]
-  actorImageLinks: ShotActorImageLinkRead[]
-  propLinks: ShotPropLinkRead[]
-  costumeLinks: ShotCostumeLinkRead[]
+  sceneLinks: ProjectSceneLinkRead[]
+  actorImageLinks: ProjectActorLinkRead[]
+  propLinks: ProjectPropLinkRead[]
+  costumeLinks: ProjectCostumeLinkRead[]
   onAddLink: (type: 'scene' | 'actor-image' | 'prop' | 'costume', assetId: string) => Promise<void>
   selectedShot: StudioShot | null
   allShots: StudioShot[]

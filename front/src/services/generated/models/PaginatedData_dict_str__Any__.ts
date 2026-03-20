@@ -3,12 +3,11 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Pagination } from './Pagination';
-import type { SceneImageRead } from './SceneImageRead';
-export type PaginatedData_SceneImageRead_ = {
+export type PaginatedData_dict_str__Any__ = {
     /**
      * 当前页数据
      */
-    items: Array<SceneImageRead>;
+    items: Array<Record<string, any>>;
     /**
      * 分页信息
      */

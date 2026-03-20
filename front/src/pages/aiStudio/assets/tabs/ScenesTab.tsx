@@ -1,7 +1,6 @@
 import { AssetTypeTab } from './AssetTypeTab'
-import { StudioAssetsService } from '../../../../services/generated'
-import type { SceneRead } from '../../../../services/generated'
 import { useNavigate } from 'react-router-dom'
+import { StudioEntitiesApi } from '../../../../services/studioEntities'
 
 export function ScenesTab() {
   const navigate = useNavigate()
@@ -10,24 +9,21 @@ export function ScenesTab() {
     <AssetTypeTab
       label="场景"
       listAssets={async ({ q, page, pageSize }) => {
-        const res = await StudioAssetsService.listScenesApiV1StudioAssetsScenesGet({ q: q ?? null, page, pageSize })
-        return { items: (res.data?.items ?? []) as SceneRead[], total: res.data?.pagination.total ?? 0 }
+        const res = await StudioEntitiesApi.list('scene', { q: q ?? null, page, pageSize })
+        return { items: (res.data?.items ?? []) as any[], total: res.data?.pagination.total ?? 0 }
       }}
       createAsset={async (payload) => {
-        const res = await StudioAssetsService.createSceneApiV1StudioAssetsScenesPost({ requestBody: payload })
+        const res = await StudioEntitiesApi.create('scene', payload as Record<string, unknown>)
         if (!res.data) throw new Error('empty scene')
-        return res.data as SceneRead
+        return res.data as any
       }}
       updateAsset={async (id, payload) => {
-        const res = await StudioAssetsService.updateSceneApiV1StudioAssetsScenesSceneIdPatch({
-          sceneId: id,
-          requestBody: payload,
-        })
+        const res = await StudioEntitiesApi.update('scene', id, payload as Record<string, unknown>)
         if (!res.data) throw new Error('empty scene')
-        return res.data as SceneRead
+        return res.data as any
       }}
       deleteAsset={async (id) => {
-        await StudioAssetsService.deleteSceneApiV1StudioAssetsScenesSceneIdDelete({ sceneId: id })
+        await StudioEntitiesApi.remove('scene', id)
       }}
       onEditAsset={(asset) => {
         navigate(`/assets/scenes/${asset.id}/edit`)

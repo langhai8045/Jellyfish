@@ -3,10 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { ApiResponse_NoneType_ } from '../models/ApiResponse_NoneType_';
-import type { ApiResponse_PaginatedData_ProjectActorLinkRead__ } from '../models/ApiResponse_PaginatedData_ProjectActorLinkRead__';
-import type { ApiResponse_PaginatedData_ProjectCostumeLinkRead__ } from '../models/ApiResponse_PaginatedData_ProjectCostumeLinkRead__';
-import type { ApiResponse_PaginatedData_ProjectPropLinkRead__ } from '../models/ApiResponse_PaginatedData_ProjectPropLinkRead__';
-import type { ApiResponse_PaginatedData_ProjectSceneLinkRead__ } from '../models/ApiResponse_PaginatedData_ProjectSceneLinkRead__';
+import type { ApiResponse_PaginatedData_Any__ } from '../models/ApiResponse_PaginatedData_Any__';
 import type { ApiResponse_ProjectActorLinkRead_ } from '../models/ApiResponse_ProjectActorLinkRead_';
 import type { ApiResponse_ProjectCostumeLinkRead_ } from '../models/ApiResponse_ProjectCostumeLinkRead_';
 import type { ApiResponse_ProjectPropLinkRead_ } from '../models/ApiResponse_ProjectPropLinkRead_';
@@ -17,37 +14,42 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class StudioShotLinksService {
     /**
-     * 项目-章节-镜头-演员关联列表（分页）
-     * @returns ApiResponse_PaginatedData_ProjectActorLinkRead__ Successful Response
+     * 项目-章节-镜头-实体关联列表（分页）
+     * @returns ApiResponse_PaginatedData_Any__ Successful Response
      * @throws ApiError
      */
-    public static listProjectActorLinksApiV1StudioShotLinksActorGet({
+    public static listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType,
         projectId,
         chapterId,
         shotId,
-        actorId,
+        assetId,
         order,
         isDesc = false,
         page = 1,
         pageSize = 10,
     }: {
+        entityType: string,
         projectId?: (string | null),
         chapterId?: (string | null),
         shotId?: (string | null),
-        actorId?: (string | null),
+        assetId?: (string | null),
         order?: (string | null),
         isDesc?: boolean,
         page?: number,
         pageSize?: number,
-    }): CancelablePromise<ApiResponse_PaginatedData_ProjectActorLinkRead__> {
+    }): CancelablePromise<ApiResponse_PaginatedData_Any__> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/studio/shot-links/actor',
+            url: '/api/v1/studio/shot-links/{entity_type}',
+            path: {
+                'entity_type': entityType,
+            },
             query: {
                 'project_id': projectId,
                 'chapter_id': chapterId,
                 'shot_id': shotId,
-                'actor_id': actorId,
+                'asset_id': assetId,
                 'order': order,
                 'is_desc': isDesc,
                 'page': page,
@@ -100,48 +102,6 @@ export class StudioShotLinksService {
         });
     }
     /**
-     * 项目-章节-镜头-场景关联列表（分页）
-     * @returns ApiResponse_PaginatedData_ProjectSceneLinkRead__ Successful Response
-     * @throws ApiError
-     */
-    public static listProjectSceneLinksApiV1StudioShotLinksSceneGet({
-        projectId,
-        chapterId,
-        shotId,
-        sceneId,
-        order,
-        isDesc = false,
-        page = 1,
-        pageSize = 10,
-    }: {
-        projectId?: (string | null),
-        chapterId?: (string | null),
-        shotId?: (string | null),
-        sceneId?: (string | null),
-        order?: (string | null),
-        isDesc?: boolean,
-        page?: number,
-        pageSize?: number,
-    }): CancelablePromise<ApiResponse_PaginatedData_ProjectSceneLinkRead__> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/studio/shot-links/scene',
-            query: {
-                'project_id': projectId,
-                'chapter_id': chapterId,
-                'shot_id': shotId,
-                'scene_id': sceneId,
-                'order': order,
-                'is_desc': isDesc,
-                'page': page,
-                'page_size': pageSize,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 创建项目-章节-镜头-场景关联
      * @returns ApiResponse_ProjectSceneLinkRead_ Successful Response
      * @throws ApiError
@@ -183,48 +143,6 @@ export class StudioShotLinksService {
         });
     }
     /**
-     * 项目-章节-镜头-道具关联列表（分页）
-     * @returns ApiResponse_PaginatedData_ProjectPropLinkRead__ Successful Response
-     * @throws ApiError
-     */
-    public static listProjectPropLinksApiV1StudioShotLinksPropGet({
-        projectId,
-        chapterId,
-        shotId,
-        propId,
-        order,
-        isDesc = false,
-        page = 1,
-        pageSize = 10,
-    }: {
-        projectId?: (string | null),
-        chapterId?: (string | null),
-        shotId?: (string | null),
-        propId?: (string | null),
-        order?: (string | null),
-        isDesc?: boolean,
-        page?: number,
-        pageSize?: number,
-    }): CancelablePromise<ApiResponse_PaginatedData_ProjectPropLinkRead__> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/studio/shot-links/prop',
-            query: {
-                'project_id': projectId,
-                'chapter_id': chapterId,
-                'shot_id': shotId,
-                'prop_id': propId,
-                'order': order,
-                'is_desc': isDesc,
-                'page': page,
-                'page_size': pageSize,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 创建项目-章节-镜头-道具关联
      * @returns ApiResponse_ProjectPropLinkRead_ Successful Response
      * @throws ApiError
@@ -259,48 +177,6 @@ export class StudioShotLinksService {
             url: '/api/v1/studio/shot-links/prop/{link_id}',
             path: {
                 'link_id': linkId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 项目-章节-镜头-服装关联列表（分页）
-     * @returns ApiResponse_PaginatedData_ProjectCostumeLinkRead__ Successful Response
-     * @throws ApiError
-     */
-    public static listProjectCostumeLinksApiV1StudioShotLinksCostumeGet({
-        projectId,
-        chapterId,
-        shotId,
-        costumeId,
-        order,
-        isDesc = false,
-        page = 1,
-        pageSize = 10,
-    }: {
-        projectId?: (string | null),
-        chapterId?: (string | null),
-        shotId?: (string | null),
-        costumeId?: (string | null),
-        order?: (string | null),
-        isDesc?: boolean,
-        page?: number,
-        pageSize?: number,
-    }): CancelablePromise<ApiResponse_PaginatedData_ProjectCostumeLinkRead__> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/studio/shot-links/costume',
-            query: {
-                'project_id': projectId,
-                'chapter_id': chapterId,
-                'shot_id': shotId,
-                'costume_id': costumeId,
-                'order': order,
-                'is_desc': isDesc,
-                'page': page,
-                'page_size': pageSize,
             },
             errors: {
                 422: `Validation Error`,

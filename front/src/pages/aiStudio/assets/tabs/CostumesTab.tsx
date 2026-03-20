@@ -1,7 +1,6 @@
 import { AssetTypeTab } from './AssetTypeTab'
-import { StudioAssetsService } from '../../../../services/generated'
-import type { CostumeRead } from '../../../../services/generated'
 import { useNavigate } from 'react-router-dom'
+import { StudioEntitiesApi } from '../../../../services/studioEntities'
 
 export function CostumesTab() {
   const navigate = useNavigate()
@@ -10,24 +9,21 @@ export function CostumesTab() {
     <AssetTypeTab
       label="服装"
       listAssets={async ({ q, page, pageSize }) => {
-        const res = await StudioAssetsService.listCostumesApiV1StudioAssetsCostumesGet({ q: q ?? null, page, pageSize })
-        return { items: (res.data?.items ?? []) as CostumeRead[], total: res.data?.pagination.total ?? 0 }
+        const res = await StudioEntitiesApi.list('costume', { q: q ?? null, page, pageSize })
+        return { items: (res.data?.items ?? []) as any[], total: res.data?.pagination.total ?? 0 }
       }}
       createAsset={async (payload) => {
-        const res = await StudioAssetsService.createCostumeApiV1StudioAssetsCostumesPost({ requestBody: payload })
+        const res = await StudioEntitiesApi.create('costume', payload as Record<string, unknown>)
         if (!res.data) throw new Error('empty costume')
-        return res.data as CostumeRead
+        return res.data as any
       }}
       updateAsset={async (id, payload) => {
-        const res = await StudioAssetsService.updateCostumeApiV1StudioAssetsCostumesCostumeIdPatch({
-          costumeId: id,
-          requestBody: payload,
-        })
+        const res = await StudioEntitiesApi.update('costume', id, payload as Record<string, unknown>)
         if (!res.data) throw new Error('empty costume')
-        return res.data as CostumeRead
+        return res.data as any
       }}
       deleteAsset={async (id) => {
-        await StudioAssetsService.deleteCostumeApiV1StudioAssetsCostumesCostumeIdDelete({ costumeId: id })
+        await StudioEntitiesApi.remove('costume', id)
       }}
       onEditAsset={(asset) => {
         navigate(`/assets/costumes/${asset.id}/edit`)

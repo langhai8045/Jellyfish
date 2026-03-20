@@ -352,6 +352,9 @@ class ShotDivision(BaseModel):
     end_line: int = Field(..., ge=1, description="结束行号（1-based）")
     script_excerpt: str = Field(..., description="镜头对应的剧本摘录/文本")
 
+    # 强区分：shot_name 是“分镜名/镜头标题”，scene_name 是“场景名”
+    shot_name: str = Field("", description="镜头名称（分镜名/镜头标题，勿与 scene_name 混用）")
+
     # 弱语义：此阶段不强制稳定ID
     scene_name: Optional[str] = Field(None, description="场景名称（可选，来自原文或推断）")
     time_of_day: Optional[SceneTimeLoose] = Field(None, description="时间（日/夜/未知等，可选）")

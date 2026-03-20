@@ -2,12 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Input, Modal, Space, message } from 'antd'
 import { LinkOutlined, PlusOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
-import { StudioAssetsService, StudioShotLinksService } from '../../../../../services/generated'
-import type { ProjectCostumeLinkRead, ProjectPropLinkRead, CostumeRead, PropRead } from '../../../../../services/generated'
+import { StudioShotLinksService } from '../../../../../services/generated'
+import type { ProjectCostumeLinkRead, ProjectPropLinkRead } from '../../../../../services/generated'
 import { resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
+import { StudioEntitiesApi } from '../../../../../services/studioEntities'
 
 type AssetKind = 'prop' | 'costume'
+
+type AssetItemLike = {
+  id: string
+  name: string
+  description?: string | null
+  thumbnail?: string
+}
 
 function LinkedAssetTab({
   kind,
@@ -25,52 +33,42 @@ function LinkedAssetTab({
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
 
   const [links, setLinks] = useState<(ProjectPropLinkRead | ProjectCostumeLinkRead)[]>([])
-  const [assets, setAssets] = useState<(PropRead | CostumeRead)[]>([])
-  const [assetsById, setAssetsById] = useState<Record<string, PropRead | CostumeRead>>({})
+  const [assets, setAssets] = useState<AssetItemLike[]>([])
+  const [assetsById, setAssetsById] = useState<Record<string, AssetItemLike>>({})
 
   const loadLinks = async () => {
     setLoading(true)
     try {
-      const res =
-        kind === 'prop'
-          ? await StudioShotLinksService.listProjectPropLinksApiV1StudioShotLinksPropGet({
-              projectId,
-              chapterId: null,
-              shotId: null,
-              propId: null,
-              order: null,
-              isDesc: false,
-              page: 1,
-              pageSize: 100,
-            })
-          : await StudioShotLinksService.listProjectCostumeLinksApiV1StudioShotLinksCostumeGet({
-              projectId,
-              chapterId: null,
-              shotId: null,
-              costumeId: null,
-              order: null,
-              isDesc: false,
-              page: 1,
-              pageSize: 100,
-            })
-      const items = res.data?.items ?? []
-      setLinks(items)
+      const res = await StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
+        entityType: kind,
+        projectId,
+        chapterId: null,
+        shotId: null,
+        assetId: null,
+        order: null,
+        isDesc: false,
+        page: 1,
+        pageSize: 100,
+      })
 
-      const ids = Array.from(
-        new Set(
-          items.map((l) => ('prop_id' in l ? l.prop_id : l.costume_id)),
-        ),
-      )
+      const items = (res.data?.items ?? []) as any[]
+      const typedItems = items as (ProjectPropLinkRead | ProjectCostumeLinkRead)[]
+      setLinks(typedItems)
+
+      const ids = Array.from(new Set(items.map((l) => (kind === 'prop' ? l.prop_id : l.costume_id)).filter(Boolean))) as string[]
+
+      const entityIdKey = kind === 'prop' ? 'prop' : 'costume'
       const detailList = await Promise.all(
         ids.map((id) =>
-          kind === 'prop'
-            ? StudioAssetsService.getPropApiV1StudioAssetsPropsPropIdGet({ propId: id }).then((r) => r.data ?? null).catch(() => null)
-            : StudioAssetsService.getCostumeApiV1StudioAssetsCostumesCostumeIdGet({ costumeId: id }).then((r) => r.data ?? null).catch(() => null),
+          StudioEntitiesApi.get(entityIdKey, id)
+            .then((r) => (r.data ?? null) as AssetItemLike | null)
+            .catch(() => null),
         ),
       )
-      const map: Record<string, PropRead | CostumeRead> = {}
+
+      const map: Record<string, AssetItemLike> = {}
       detailList.filter(Boolean).forEach((x) => {
-        map[(x as PropRead | CostumeRead).id] = x as PropRead | CostumeRead
+        map[x!.id] = x!
       })
       setAssetsById(map)
     } catch {
@@ -88,21 +86,21 @@ function LinkedAssetTab({
       const q = (qOverride ?? search).trim()
       const res =
         kind === 'prop'
-          ? await StudioAssetsService.listPropsApiV1StudioAssetsPropsGet({
+          ? await StudioEntitiesApi.list('prop', {
               q: q || null,
               order: 'updated_at',
               isDesc: true,
               page: 1,
               pageSize: 100,
             })
-          : await StudioAssetsService.listCostumesApiV1StudioAssetsCostumesGet({
+          : await StudioEntitiesApi.list('costume', {
               q: q || null,
               order: 'updated_at',
               isDesc: true,
               page: 1,
               pageSize: 100,
             })
-      setAssets(res.data?.items ?? [])
+      setAssets((res.data?.items ?? []) as AssetItemLike[])
     } catch {
       message.error(`加载${kind === 'prop' ? '道具' : '服装'}失败`)
       setAssets([])
@@ -195,7 +193,7 @@ function LinkedAssetTab({
             {links.map((l) => {
               const assetId = 'prop_id' in l ? l.prop_id : l.costume_id
               const asset = assetsById[assetId]
-              const linkThumb = 'thumbnail' in l ? l.thumbnail : undefined
+              const linkThumb = (l as any).thumbnail as string | undefined
               return (
                 <DisplayImageCard
                   key={l.id}

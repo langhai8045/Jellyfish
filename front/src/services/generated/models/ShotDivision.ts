@@ -23,6 +23,10 @@ export type ShotDivision = {
      */
     script_excerpt: string;
     /**
+     * 镜头名称（分镜名/镜头标题，勿与 scene_name 混用）
+     */
+    shot_name?: string;
+    /**
      * 场景名称（可选，来自原文或推断）
      */
     scene_name?: (string | null);

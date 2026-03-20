@@ -43,7 +43,17 @@ from langchain_core.prompts import PromptTemplate
 
 _SCRIPT_DIVIDER_INSTRUCTIONS = """\
 你是"剧本分镜师"。将完整剧本分割为多个镜头。每个镜头应是完整的连贯场景。
-为每个镜头提供起止行号、script_excerpt、scene_name、time_of_day、character_names_in_text（角色名/称呼，弱信息；稳定ID会在后续合并阶段统一分配）。
+为每个镜头提供：
+- index（镜头序号，章节内唯一；从 1 开始）
+- start_line、end_line
+- shot_name（镜头名称/镜头标题，分镜名；一句话描述该镜头画面/动作；不要把它当作场景名）
+- script_excerpt（镜头对应的剧本摘录/文本）
+- scene_name（场景名称，必须与 shots 中 scene_name 的含义一致；不要把 shot_name 当成 scene_name）
+- time_of_day
+- character_names_in_text（角色名/称呼，弱信息；稳定ID会在后续合并阶段统一分配）
+严格区分字段含义：
+- shot_name = 分镜名/镜头标题
+- scene_name = 场景名
 只输出 JSON，符合 ScriptDivisionResult 结构。
 """
 
@@ -175,6 +185,9 @@ _SCRIPT_EXTRACTOR_INSTRUCTIONS = """\
 - 禁止“同义名/括号变体/临时称呼”漂移：例如禁止在 shots 中写「女子（群）」但在 characters 中没有该条目；禁止「仙女A」与「仙女 A」混用。
 - 遇到群体角色/泛指角色（如“女子（群）”“群众”“村民们”）：必须在 characters 列表中创建一条同名角色（name 完全一致），并在 shots 中引用该 name。
 - 对于难以确定是否同一角色的称呼：宁可在 characters 里拆成两条不同 name，也不要在 shots 中凭空换名。
+- 输出 shots 之前，必须做“全集校验”并补齐缺失：所有 shots[*] 中出现的 character_names/prop_names/costume_names/scene_name 的名字集合，必须都能在对应全局列表（characters/props/costumes/scenes）的 name 中找到；如果有缺失，必须在全局列表中补齐对应条目（描述可最小化，但 name 必须完全一致），禁止用别名替换来绕过。
+- 角色名/场景名必须原样保留字符细节：包括全角/半角括号、空格、标点，不要自动做任何规范化或替换（例如不能把「女子（群）」改成「女子(群)」或「女子 （群）」）。
+- 严格区分：shots[*].title 是“镜头标题”（一句话描述该镜头画面/动作），不要拿它当作 scenes 的 scene 名；shots[*].scene_name 才是场景名称，必须来自 scenes 全局列表的 name。
 
 输入：
 - project_id

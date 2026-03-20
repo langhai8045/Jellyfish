@@ -20,5 +20,9 @@ export type ProjectActorLinkRead = {
      */
     shot_id?: (string | null);
     actor_id: string;
+    /**
+     * 演员缩略图下载地址
+     */
+    thumbnail?: string;
 };
 

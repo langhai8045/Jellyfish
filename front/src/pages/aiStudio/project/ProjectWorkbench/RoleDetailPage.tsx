@@ -1,8 +1,8 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import type { AssetViewAngle } from '../../../../services/generated'
-import type { CharacterImageRead, CharacterRead } from '../../../../services/generated'
-import { StudioCastService, StudioImageTasksService } from '../../../../services/generated'
+import { StudioImageTasksService } from '../../../../services/generated'
 import { AssetEditPageBase } from '../../assets/components/AssetEditPageBase'
+import type { AssetViewAngle } from '../../assets/components/AssetEditPageBase'
+import { StudioEntitiesApi } from '../../../../services/studioEntities'
 
 type UpdateImagePayload = {
   file_id: string
@@ -27,43 +27,29 @@ export default function RoleDetailPage() {
   }
 
   return (
-    <AssetEditPageBase<CharacterRead, CharacterImageRead>
+    <AssetEditPageBase<any, any>
       assetId={characterId}
       missingAssetIdText="缺少 character_id"
       assetDisplayName="角色"
       backTo={projectId ? `/projects/${projectId}?tab=roles` : '/projects'}
       relationType="character_image"
       getAsset={async (id) => {
-        const res = await StudioCastService.getCharacterApiV1StudioCastCharactersCharacterIdGet({ characterId: id })
-        return (res.data ?? null) as CharacterRead | null
+        const res = await StudioEntitiesApi.get('character', id)
+        return (res.data ?? null) as any | null
       }}
       updateAsset={async (id, payload) => {
-        const res = await StudioCastService.updateCharacterApiV1StudioCastCharactersCharacterIdPatch({
-          characterId: id,
-          requestBody: payload,
-        })
-        return (res.data ?? null) as CharacterRead | null
+        const res = await StudioEntitiesApi.update('character', id, payload as Record<string, unknown>)
+        return (res.data ?? null) as any | null
       }}
       listImages={async (id) => {
-        const res = await StudioCastService.listCharacterImagesApiV1StudioCastCharactersCharacterIdImagesGet({
-          characterId: id,
-          page: 1,
-          pageSize: 100,
-        })
-        return (res.data?.items ?? []) as CharacterImageRead[]
+        const res = await StudioEntitiesApi.listImages('character', id, { page: 1, pageSize: 100 })
+        return (res.data?.items ?? []) as any[]
       }}
       createImageSlot={async (id, angle: AssetViewAngle) => {
-        await StudioCastService.createCharacterImageApiV1StudioCastCharactersCharacterIdImagesPost({
-          characterId: id,
-          requestBody: { view_angle: angle },
-        })
+        await StudioEntitiesApi.createImage('character', id, { view_angle: angle })
       }}
       updateImage={async (id, imageId, payload) => {
-        await StudioCastService.updateCharacterImageApiV1StudioCastCharactersCharacterIdImagesImageIdPatch({
-          characterId: id,
-          imageId,
-          requestBody: normalizeUpdateImagePayload(payload),
-        })
+        await StudioEntitiesApi.updateImage('character', id, imageId, normalizeUpdateImagePayload(payload))
       }}
       createGenerationTask={async (id, imageId) => {
         const res = await StudioImageTasksService.createCharacterImageGenerationTaskApiV1StudioImageTasksCharactersCharacterIdImageTasksPost({
