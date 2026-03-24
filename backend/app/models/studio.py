@@ -610,10 +610,10 @@ class ShotFrameImage(Base, TimestampMixin):
         index=True,
         comment="帧类型：first/last/key",
     )
-    file_id: Mapped[str] = mapped_column(
+    file_id: Mapped[str | None] = mapped_column(
         String(64),
         ForeignKey("files.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
         comment="关联的文件 ID（FileItem）",
     )

@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.studio import Chapter, Project, Shot
 from app.models.task_links import GenerationTaskLink
 from app.core.task_manager.types import TaskStatus
-from app.core.skills_runtime import ShotFramePromptInput
 
 
 class TextChunkInput(BaseModel):
@@ -54,9 +53,10 @@ class ShotlistExtractTaskRequest(ShotlistExtractRequest, BindTarget):
     """分镜抽取任务请求：在抽取参数基础上增加绑定目标。"""
 
 
-class ShotFramePromptRequest(ShotFramePromptInput, BindTarget):
-    """镜头分镜帧提示词生成任务：通过 frame_type 控制首/尾/关键帧。"""
+class ShotFramePromptRequest(BaseModel):
+    """镜头分镜帧提示词生成任务请求。"""
 
+    shot_id: str = Field(..., description="镜头 ID")
     frame_type: str = Field(..., description="first | last | key")
 
 

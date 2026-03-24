@@ -14,6 +14,7 @@ from langchain_core.prompts import PromptTemplate as LcPromptTemplate
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core import storage
 from app.core.db import async_session_maker
@@ -39,6 +40,7 @@ from app.models.studio import (
     Scene,
     SceneImage,
     ShotDetail,
+    ShotCharacterLink,
     FileItem,
     ShotFrameType,
     ShotFrameImage,
@@ -71,6 +73,19 @@ class StudioImageTaskRequest(BaseModel):
         None,
         description="图片模型 ID，如 ActorImage.id / SceneImage.id / PropImage.id 等；必须与路径主体 ID 匹配",
     )
+
+
+class ShotFrameImageTaskRequest(BaseModel):
+    """镜头分镜帧图片生成请求体：只根据 `shot_id + frame_type` 定位 ShotFrameImage。
+
+    用于替代旧接口中通过 `image_id` 直接传入 ShotFrameImage.id 的方式。
+    """
+
+    model_id: str | None = Field(
+        None,
+        description="可选模型 ID（models.id）；不传则使用 ModelSettings.default_image_model_id；Provider 由模型关联反查",
+    )
+    frame_type: ShotFrameType = Field(..., description="first | last | key")
 
 
 def _provider_key_from_db_name(name: str) -> str:
@@ -154,14 +169,14 @@ def _prompt_from_description(description: str, *, not_found_msg: str) -> str:
 def _is_front_view(view_angle: AssetViewAngle | str | None) -> bool:
     if view_angle is None:
         return False
-    value = view_angle.value if hasattr(view_angle, "value") else str(view_angle)
+    value = view_angle.value if isinstance(view_angle, AssetViewAngle) else str(view_angle)
     return value == AssetViewAngle.front.value
 
 
 def _map_view_angle_for_prompt(view_angle: AssetViewAngle | str | None) -> str:
     if view_angle is None:
         return ""
-    raw = view_angle.value if hasattr(view_angle, "value") else str(view_angle)
+    raw = view_angle.value if isinstance(view_angle, AssetViewAngle) else str(view_angle)
     view_angle_map = {
         "RIGH": "纯右側面,严格右侧面，90度纯侧面轮廓，耳朵清晰可见",
         "RIGHT": "纯右側面,严格右侧面，90度纯侧面轮廓，耳朵清晰可见",
@@ -308,7 +323,8 @@ async def _resolve_ordered_image_refs(
     best_by_angle: dict[str, object] = {}
     for row in rows:
         angle = getattr(row, "view_angle", None)
-        key = angle.value if hasattr(angle, "value") else str(angle)
+        # 显式 isinstance 以便静态类型检查器正确收窄类型。
+        key = angle.value if isinstance(angle, AssetViewAngle) else str(angle)
         if key and key not in best_by_angle:
             best_by_angle[key] = row
 
@@ -365,7 +381,7 @@ def _asset_prompt_category(
 
 
 def _shot_frame_prompt_category(frame_type: ShotFrameType | str) -> PromptCategory:
-    value = frame_type.value if hasattr(frame_type, "value") else str(frame_type)
+    value = frame_type.value if isinstance(frame_type, ShotFrameType) else str(frame_type)
     if value == ShotFrameType.first.value:
         return PromptCategory.frame_head
     if value == ShotFrameType.last.value:
@@ -533,14 +549,15 @@ async def _create_image_task_and_link(
             # 如果本次落库的行是主图，确保同一角色只有一个主图
             if ci is not None and getattr(ci, "is_primary", False) is True and getattr(ci, "id", None) is not None:
                 stmt_clear = (
-                    CharacterImage.__table__.update()
+                    CharacterImage.__table__.update()  # type: ignore[attr-defined]
                     .where(CharacterImage.character_id == character_id, CharacterImage.id != ci.id)
                     .values(is_primary=False)
                 )
                 await session.execute(stmt_clear)
         elif relation_type == "shot_frame_image":
             image_row = await session.get(ShotFrameImage, int(relation_entity_id))
-            if image_row is not None and not image_row.file_id:
+            if image_row is not None:
+                # 无条件覆盖：如果该 ShotFrameImage 是占位记录，也需要在生成完成后写入新图片。
                 image_row.file_id = file_id
 
     async def _runner(task_id: str, args: dict) -> None:
@@ -918,50 +935,145 @@ async def create_character_image_generation_task(
 
 
 @router.post(
-    "/shot-details/{shot_detail_id}/frame-image-tasks",
+    "/shot/{shot_id}/frame-image-tasks",
     response_model=ApiResponse[TaskCreated],
     status_code=status.HTTP_201_CREATED,
     summary="镜头分镜帧图片生成（任务版）",
 )
 async def create_shot_frame_image_generation_task(
-    shot_detail_id: str,
-    body: StudioImageTaskRequest,
+    shot_id: str,
+    body: ShotFrameImageTaskRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[TaskCreated]:
-    """为镜头分镜帧（ShotDetail）创建图片生成任务。
+    """为镜头分镜帧图片生成任务（基于 `shot_id + frame_type` 自动定位数据）。"""
 
-    - path 参数 shot_detail_id 为 ShotDetail.id
-    - body.image_id 必须为该分镜下的 ShotFrameImage.id
-    - relation_type 固定为 shot_frame_image，relation_entity_id 为 ShotFrameImage.id
-    """
-    shot_detail = await db.get(ShotDetail, shot_detail_id)
+    shot_detail = await db.get(ShotDetail, shot_id)
     if shot_detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ShotDetail not found")
-    if body.image_id is None:
+
+    # 取对应帧的原始提示词。
+    if body.frame_type == ShotFrameType.first:
+        raw_prompt = (shot_detail.first_frame_prompt or "").strip()
+    elif body.frame_type == ShotFrameType.last:
+        raw_prompt = (shot_detail.last_frame_prompt or "").strip()
+    else:
+        raw_prompt = (shot_detail.key_frame_prompt or "").strip()
+
+    if not raw_prompt:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="image_id is required for shot frame image generation",
+            detail=f"ShotDetail has no prompt for frame_type={body.frame_type}",
         )
-    image_row = await db.get(ShotFrameImage, body.image_id)
-    if image_row is None or image_row.shot_detail_id != shot_detail_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="image_id does not belong to given shot_detail_id",
-        )
-    # ShotDetail 无 description：默认优先 key_frame_prompt，其次 first/last。
-    prompt = (
-        (shot_detail.key_frame_prompt or "").strip()
-        or (shot_detail.first_frame_prompt or "").strip()
-        or (shot_detail.last_frame_prompt or "").strip()
+
+    # 通过 shot_id 与 frame_type 定位 ShotFrameImage，作为落库目标；若不存在则创建占位记录。
+    shot_frame_image_stmt = (
+        select(ShotFrameImage)
+        .where(ShotFrameImage.shot_detail_id == shot_id, ShotFrameImage.frame_type == body.frame_type)
+        .limit(1)
     )
-    if not prompt:
+    shot_frame_image = (await db.execute(shot_frame_image_stmt)).scalars().first()
+    if shot_frame_image is None:
+        # 缺少对应 frame_type 的 ShotFrameImage slot：创建占位记录（file_id 允许为空）。
+        # 后续图片生成完成后会覆盖写回 file_id。
+        shot_frame_image = ShotFrameImage(
+            shot_detail_id=shot_id,
+            frame_type=body.frame_type,
+            file_id=None,
+            width=None,
+            height=None,
+            format="png",
+        )
+        db.add(shot_frame_image)
+        await db.flush()
+        await db.refresh(shot_frame_image)
+    else:
+        # 已存在则补齐默认字段（不改写 file_id）。
+        if not shot_frame_image.format:
+            shot_frame_image.format = "png"
+
+    # 通过 shot_id 取镜头角色，并按 ShotCharacterLink.index 构建角色顺序。
+    role_links_stmt = (
+        select(ShotCharacterLink)
+        .options(selectinload(ShotCharacterLink.character))
+        .where(ShotCharacterLink.shot_id == shot_id)
+        .order_by(ShotCharacterLink.index.asc())
+    )
+    role_links = (await db.execute(role_links_stmt)).scalars().all()
+    # 若镜头未绑定任何角色，则允许继续生成：此时不传入 role images，prompt 使用原始 frame prompt（不做角色替换）。
+
+    role_names: list[str] = []
+    role_image_refs: list[dict[str, str]] = []
+
+    for link in role_links:
+        character = link.character
+        if character is None:
+            continue
+
+        # 每个角色取一个 front 参考图，保证 image list 顺序与角色顺序一致。
+        ref = await _resolve_front_image_ref(
+            db,
+            image_model=CharacterImage,
+            parent_field_name="character_id",
+            parent_id=character.id,
+            preferred_quality_level=None,
+        )
+        if ref is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CharacterImage front ref not found for character_id={character.id}, name={character.name}",
+            )
+
+        role_names.append(character.name)
+        role_image_refs.append(ref)
+
+    if role_links and not role_names:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="ShotDetail has no frame prompt (key/first/last are all empty)",
+            detail="No valid shot character image refs found",
         )
+    if len(set(role_names)) != len(role_names):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Duplicate character names in shot character links; cannot map names to image order",
+        )
+
+    def _cn_num(n: int) -> str:
+        ones = {0: "零", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七", 8: "八", 9: "九"}
+        if n <= 9:
+            return ones[n]
+        if n == 10:
+            return "十"
+        if n < 20:
+            return f"十{ones[n - 10]}"
+        tens = n // 10
+        rem = n % 10
+        if rem == 0:
+            return f"{ones[tens]}十"
+        return f"{ones[tens]}十{ones[rem]}"
+
+    # 将提示词中的角色名替换为图一/图二/...，以 image list 顺序作为图序。
+    name_to_token: dict[str, str] = {
+        name: f"图{_cn_num(i + 1)}"
+        for i, name in enumerate(role_names)
+    }
+    sorted_pairs = sorted(name_to_token.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+    def _replace_names(text: str) -> str:
+        out = text or ""
+        for name, token in sorted_pairs:
+            if name:
+                out = out.replace(name, token)
+        return out
+
+    # 同步替换所有帧提示词变量，避免模板使用了 first/last/key 任一字段时仍保留角色名。
+    replaced_first = _replace_names(shot_detail.first_frame_prompt or "")
+    replaced_last = _replace_names(shot_detail.last_frame_prompt or "")
+    replaced_key = _replace_names(shot_detail.key_frame_prompt or "")
+
+    base_prompt = _replace_names(raw_prompt)
     prompt = await _build_prompt_with_template(
         db,
-        category=_shot_frame_prompt_category(image_row.frame_type),
+        category=_shot_frame_prompt_category(shot_frame_image.frame_type),
         variables={
             "description": shot_detail.description,
             "atmosphere": shot_detail.atmosphere,
@@ -969,21 +1081,23 @@ async def create_shot_frame_image_generation_task(
             "camera_shot": shot_detail.camera_shot,
             "angle": shot_detail.angle,
             "movement": shot_detail.movement,
-            "frame_type": image_row.frame_type,
-            "first_frame_prompt": shot_detail.first_frame_prompt,
-            "last_frame_prompt": shot_detail.last_frame_prompt,
-            "key_frame_prompt": shot_detail.key_frame_prompt,
-            "base_prompt": prompt,
+            "frame_type": shot_frame_image.frame_type,
+            "first_frame_prompt": replaced_first,
+            "last_frame_prompt": replaced_last,
+            "key_frame_prompt": replaced_key,
+            "base_prompt": base_prompt,
         },
-        fallback_prompt=prompt,
-        not_found_msg="ShotDetail has no frame prompt (key/first/last are all empty)",
+        fallback_prompt=base_prompt,
+        not_found_msg=f"ShotDetail has no prompt for frame_type={body.frame_type}",
     )
+
     created = await _create_image_task_and_link(
         db=db,
         model_id=body.model_id,
         relation_type="shot_frame_image",
-        relation_entity_id=str(image_row.id),
+        relation_entity_id=str(shot_frame_image.id),
         prompt=prompt,
+        images=role_image_refs if role_image_refs else None,
     )
     return success_response(created, code=201)
 

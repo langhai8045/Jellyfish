@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { ApiResponse_TaskCreated_ } from '../models/ApiResponse_TaskCreated_';
+import type { ShotFrameImageTaskRequest } from '../models/ShotFrameImageTaskRequest';
 import type { StudioImageTaskRequest } from '../models/StudioImageTaskRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -98,26 +99,22 @@ export class StudioImageTasksService {
     }
     /**
      * 镜头分镜帧图片生成（任务版）
-     * 为镜头分镜帧（ShotDetail）创建图片生成任务。
-     *
-     * - path 参数 shot_detail_id 为 ShotDetail.id
-     * - body.image_id 必须为该分镜下的 ShotFrameImage.id
-     * - relation_type 固定为 shot_frame_image，relation_entity_id 为 ShotFrameImage.id
+     * 为镜头分镜帧图片生成任务（基于 `shot_id + frame_type` 自动定位数据）。
      * @returns ApiResponse_TaskCreated_ Successful Response
      * @throws ApiError
      */
-    public static createShotFrameImageGenerationTaskApiV1StudioImageTasksShotDetailsShotDetailIdFrameImageTasksPost({
-        shotDetailId,
+    public static createShotFrameImageGenerationTaskApiV1StudioImageTasksShotShotIdFrameImageTasksPost({
+        shotId,
         requestBody,
     }: {
-        shotDetailId: string,
-        requestBody: StudioImageTaskRequest,
+        shotId: string,
+        requestBody: ShotFrameImageTaskRequest,
     }): CancelablePromise<ApiResponse_TaskCreated_> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/studio/image-tasks/shot-details/{shot_detail_id}/frame-image-tasks',
+            url: '/api/v1/studio/image-tasks/shot/{shot_id}/frame-image-tasks',
             path: {
-                'shot_detail_id': shotDetailId,
+                'shot_id': shotId,
             },
             body: requestBody,
             mediaType: 'application/json',

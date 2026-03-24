@@ -12,6 +12,7 @@ import {
   Segmented,
   Select,
   Slider,
+  Spin,
   Space,
   Switch,
   Tabs,
@@ -58,14 +59,17 @@ import {
 } from '@ant-design/icons'
 import { useParams, Link } from 'react-router-dom'
 import {
+  FilmService,
   StudioChaptersService,
   StudioImageTasksService,
+  StudioShotCharacterLinksService,
   StudioShotDetailsService,
   StudioShotDialogLinesService,
   StudioShotFrameImagesService,
   StudioShotLinksService,
   StudioShotsService,
 } from '../../../services/generated'
+import { StudioEntitiesApi } from '../../../services/studioEntities'
 import type {
   CameraAngle,
   CameraMovement,
@@ -76,11 +80,14 @@ import type {
   ShotDetailRead,
   ShotDialogLineRead,
   ShotFrameImageRead,
+  ShotCharacterLinkRead,
   ProjectPropLinkRead,
   ShotRead,
   ProjectSceneLinkRead,
   ShotStatus,
 } from '../../../services/generated'
+import { listTaskLinksNormalized } from '../../../services/filmTaskLinks'
+import { buildFileDownloadUrl } from '../assets/utils'
 import type { Chapter } from '../../../mocks/data'
 import './chapterStudio.separation.css'
 
@@ -106,10 +113,24 @@ type LayoutPrefs = {
   timelineCollapsed: boolean
 }
 
+type KeyframeCardState = {
+  loading: boolean
+  taskStatus: string | null
+  taskId: string | null
+  thumbs: Array<{ linkId: number; fileId: string; thumbUrl: string }>
+  modalOpen: boolean
+  applyingFileId: string | null
+}
+
 const LAYOUT_STORAGE_KEY = 'jellyfish_chapter_studio_layout_v1'
+type PromptFrameType = 'first' | 'key' | 'last'
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function reorder<T>(list: T[], startIndex: number, endIndex: number) {
@@ -232,6 +253,7 @@ const ChapterStudio: React.FC = () => {
   const [actorImageLinks, setActorImageLinks] = useState<ProjectActorLinkRead[]>([])
   const [propLinks, setPropLinks] = useState<ProjectPropLinkRead[]>([])
   const [costumeLinks, setCostumeLinks] = useState<ProjectCostumeLinkRead[]>([])
+  const [shotCharacterLinks, setShotCharacterLinks] = useState<ShotCharacterLinkRead[]>([])
   const [shotDurations, setShotDurations] = useState<Record<string, number>>({})
   const [loadingShots, setLoadingShots] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -239,6 +261,9 @@ const ChapterStudio: React.FC = () => {
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const saveTimerRef = useRef<number | null>(null)
+  const cameraPatchSeqRef = useRef(0)
+  const [cameraUpdating, setCameraUpdating] = useState(false)
+  const [promptAssetsUpdating, setPromptAssetsUpdating] = useState(false)
 
   const [frameTab, setFrameTab] = useState<'head' | 'keyframes' | 'tail' | 'compare'>('keyframes')
   const [playbackRate, setPlaybackRate] = useState(1)
@@ -363,6 +388,7 @@ const ChapterStudio: React.FC = () => {
       setActorImageLinks([])
       setPropLinks([])
       setCostumeLinks([])
+      setShotCharacterLinks([])
       return
     }
     setLoadingDetail(true)
@@ -427,8 +453,11 @@ const ChapterStudio: React.FC = () => {
         page: 1,
         pageSize: 100,
       }).then((r: any) => r.data?.items ?? []),
+      StudioShotCharacterLinksService.listShotCharacterLinksApiV1StudioShotCharacterLinksGet({
+        shotId: selectedShotId,
+      }).then((r: any) => (r.data ?? []) as ShotCharacterLinkRead[]),
     ])
-      .then(([detail, dialogs, frames, scenes, actors, props, costumes]) => {
+      .then(([detail, dialogs, frames, scenes, actors, props, costumes, shotCharacters]) => {
         setShotDetail(detail)
         lastSavedDetailRef.current = detail
         setDialogLines(dialogs)
@@ -437,6 +466,7 @@ const ChapterStudio: React.FC = () => {
         setActorImageLinks(actors)
         setPropLinks(props)
         setCostumeLinks(costumes)
+        setShotCharacterLinks(shotCharacters)
         if (detail?.duration != null) {
           setShotDurations((prev) => ({ ...prev, [selectedShotId]: detail.duration ?? 0 }))
         }
@@ -486,113 +516,89 @@ const ChapterStudio: React.FC = () => {
     await refreshDialogLines(selectedShotId)
   }
 
-  const refreshFrameImages = async (shotId: string) => {
-    const res = await StudioShotFrameImagesService.listShotFrameImagesApiV1StudioShotFrameImagesGet({
-      shotDetailId: shotId,
-      order: null,
-      isDesc: false,
-      page: 1,
-      pageSize: 100,
-    })
-    setFrameImages(res.data?.items ?? [])
-  }
-
-  const addFrameImage = async (frameType: 'first' | 'key' | 'last', fileId: string) => {
-    if (!selectedShotId) return
-    const v = fileId.trim()
-    if (!v) return
-    await StudioShotFrameImagesService.createShotFrameImageApiV1StudioShotFrameImagesPost({
-      requestBody: { shot_detail_id: selectedShotId, frame_type: frameType, file_id: v },
-    })
-    await refreshFrameImages(selectedShotId)
-  }
-
-  const deleteFrameImage = async (imageId: number) => {
-    if (!selectedShotId) return
-    await StudioShotFrameImagesService.deleteShotFrameImageApiV1StudioShotFrameImagesImageIdDelete({ imageId })
-    await refreshFrameImages(selectedShotId)
-  }
-
-  const refreshLinks = async (shotId: string) => {
-    const [scenes, actors, props, costumes] = await Promise.all([
+  const refreshPromptAssetLinks = async (shotId: string) => {
+    const [scenes, actors] = await Promise.all([
       StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
         entityType: 'scene',
         projectId: projectId ?? null,
         chapterId: chapterId ?? null,
         shotId,
+        assetId: null,
         order: null,
         isDesc: false,
         page: 1,
         pageSize: 100,
-        assetId: null,
-      }).then((r: any) => r.data?.items ?? []),
+      }).then((r: any) => (r.data?.items ?? []) as ProjectSceneLinkRead[]),
       StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
         entityType: 'actor',
         projectId: projectId ?? null,
         chapterId: chapterId ?? null,
         shotId,
+        assetId: null,
         order: null,
         isDesc: false,
         page: 1,
         pageSize: 100,
-        assetId: null,
-      }).then((r: any) => r.data?.items ?? []),
-      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
-        entityType: 'prop',
-        projectId: projectId ?? null,
-        chapterId: chapterId ?? null,
-        shotId,
-        order: null,
-        isDesc: false,
-        page: 1,
-        pageSize: 100,
-        assetId: null,
-      }).then((r: any) => r.data?.items ?? []),
-      StudioShotLinksService.listProjectEntityLinksApiV1StudioShotLinksEntityTypeGet({
-        entityType: 'costume',
-        projectId: projectId ?? null,
-        chapterId: chapterId ?? null,
-        shotId,
-        order: null,
-        isDesc: false,
-        page: 1,
-        pageSize: 100,
-        assetId: null,
-      }).then((r: any) => r.data?.items ?? []),
+      }).then((r: any) => (r.data?.items ?? []) as ProjectActorLinkRead[]),
     ])
     setSceneLinks(scenes)
     setActorImageLinks(actors)
-    setPropLinks(props)
-    setCostumeLinks(costumes)
   }
 
-  const addLink = async (type: 'scene' | 'actor-image' | 'prop' | 'costume', assetId: string) => {
+  const updatePromptScene = async (sceneId?: string) => {
+    if (!selectedShotId || !projectId) return
+    setPromptAssetsUpdating(true)
+    try {
+      const currentLinks = sceneLinks.filter((l) => (l.shot_id ?? null) === selectedShotId)
+      await Promise.all(currentLinks.map((l) => StudioShotLinksService.deleteProjectSceneLinkApiV1StudioShotLinksSceneLinkIdDelete({ linkId: l.id })))
+      const nextSceneId = (sceneId ?? '').trim()
+      if (nextSceneId) {
+        await StudioShotLinksService.createProjectSceneLinkApiV1StudioShotLinksScenePost({
+          requestBody: {
+            project_id: projectId,
+            chapter_id: chapterId ?? null,
+            shot_id: selectedShotId,
+            asset_id: nextSceneId,
+          },
+        })
+      }
+      await refreshPromptAssetLinks(selectedShotId)
+      patchShotDetailLocal({ scene_id: nextSceneId || null })
+    } catch {
+      message.error('更新场景失败')
+    } finally {
+      setPromptAssetsUpdating(false)
+    }
+  }
+
+  const updatePromptActors = async (actorIds: string[]) => {
     if (!selectedShotId) return
-    if (!projectId) {
-      message.error('缺少项目ID')
-      return
+    const next = Array.from(new Set(actorIds.map((x) => x.trim()).filter(Boolean)))
+    const current = shotCharacterLinks
+      .slice()
+      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      .map((x) => x.character_id)
+    const removed = current.filter((id) => !next.includes(id))
+    if (removed.length > 0) {
+      message.warning('当前接口暂不支持移除已关联角色，仅会新增或重排')
     }
-    const v = assetId.trim()
-    if (!v) return
-    const requestBody = {
-      project_id: projectId,
-      chapter_id: chapterId ?? null,
-      shot_id: selectedShotId,
-      asset_id: v,
+    if (next.length === 0) return
+    setPromptAssetsUpdating(true)
+    try {
+      await Promise.all(
+        next.map((characterId, index) =>
+          StudioShotCharacterLinksService.upsertShotCharacterLinkApiV1StudioShotCharacterLinksPost({
+            requestBody: { shot_id: selectedShotId, character_id: characterId, index, note: '' },
+          }),
+        ),
+      )
+      const refreshed = await StudioShotCharacterLinksService.listShotCharacterLinksApiV1StudioShotCharacterLinksGet({ shotId: selectedShotId })
+      setShotCharacterLinks((refreshed.data ?? []) as ShotCharacterLinkRead[])
+    } catch {
+      message.error('更新角色失败')
+    } finally {
+      setPromptAssetsUpdating(false)
     }
-    if (type === 'scene') {
-      await StudioShotLinksService.createProjectSceneLinkApiV1StudioShotLinksScenePost({ requestBody })
-    }
-    if (type === 'actor-image') {
-      await StudioShotLinksService.createProjectActorLinkApiV1StudioShotLinksActorPost({ requestBody })
-    }
-    if (type === 'prop') {
-      await StudioShotLinksService.createProjectPropLinkApiV1StudioShotLinksPropPost({ requestBody })
-    }
-    if (type === 'costume') {
-      await StudioShotLinksService.createProjectCostumeLinkApiV1StudioShotLinksCostumePost({ requestBody })
-    }
-    await refreshLinks(selectedShotId)
   }
 
   const generateFrameImageTask = async () => {
@@ -608,9 +614,9 @@ const ChapterStudio: React.FC = () => {
     }
     setGenerating(true)
     try {
-      await StudioImageTasksService.createShotFrameImageGenerationTaskApiV1StudioImageTasksShotDetailsShotDetailIdFrameImageTasksPost({
-        shotDetailId: selectedShotId,
-        requestBody: { image_id: target.id, model_id: null },
+      await StudioImageTasksService.createShotFrameImageGenerationTaskApiV1StudioImageTasksShotShotIdFrameImageTasksPost({
+        shotId: selectedShotId,
+        requestBody: { frame_type: target.frame_type as any, model_id: null } as any,
       })
       message.success('已创建生成任务')
     } catch {
@@ -637,6 +643,32 @@ const ChapterStudio: React.FC = () => {
     setShotDetail((prev) => (prev ? { ...prev, ...patch } : prev))
   }
 
+  const patchShotDetailImmediate = async (patch: Partial<ShotDetailRead>) => {
+    if (!selectedShotId) return
+    patchShotDetailLocal(patch)
+    setCameraUpdating(true)
+    const seq = ++cameraPatchSeqRef.current
+    try {
+      const r: any = await StudioShotDetailsService.updateShotDetailApiV1StudioShotDetailsShotIdPatch({
+        shotId: selectedShotId,
+        requestBody: patch as any,
+      })
+      if (seq !== cameraPatchSeqRef.current) return
+      if (r.data) {
+        setShotDetail(r.data)
+        lastSavedDetailRef.current = r.data
+        if (r.data.duration != null) {
+          setShotDurations((m) => ({ ...m, [selectedShotId]: r.data?.duration ?? 0 }))
+        }
+      }
+    } catch {
+      if (seq !== cameraPatchSeqRef.current) return
+      message.error('镜头语言更新失败')
+    } finally {
+      if (seq === cameraPatchSeqRef.current) setCameraUpdating(false)
+    }
+  }
+
   // 自动保存（防抖）：shotDetail 变更后 PATCH 到后端
   useEffect(() => {
     if (!selectedShotId || !shotDetail) return
@@ -649,11 +681,8 @@ const ChapterStudio: React.FC = () => {
       const assignIfChanged = <K extends keyof ShotDetailRead>(key: K) => {
         if (prev?.[key] !== next[key]) patch[key] = next[key] ?? null
       }
-      assignIfChanged('camera_shot')
-      assignIfChanged('angle')
-      assignIfChanged('movement')
       assignIfChanged('scene_id')
-      assignIfChanged('duration')
+      // 镜头语言字段（camera_shot/angle/movement/duration）走即时更新，不在此处防抖提交
       // array / object fields
       if (JSON.stringify(prev?.mood_tags ?? null) !== JSON.stringify(next.mood_tags ?? null)) patch.mood_tags = next.mood_tags ?? null
       assignIfChanged('atmosphere')
@@ -1077,9 +1106,9 @@ const ChapterStudio: React.FC = () => {
                 const frames = framesRes.data?.items ?? []
                 const target = frames.find((x) => x.frame_type === 'key') ?? frames[0]
                 if (!target) continue
-                await StudioImageTasksService.createShotFrameImageGenerationTaskApiV1StudioImageTasksShotDetailsShotDetailIdFrameImageTasksPost({
-                  shotDetailId: id,
-                  requestBody: { image_id: target.id, model_id: null },
+                await StudioImageTasksService.createShotFrameImageGenerationTaskApiV1StudioImageTasksShotShotIdFrameImageTasksPost({
+                  shotId: id,
+                  requestBody: { frame_type: target.frame_type as any, model_id: null } as any,
                 })
               }
               message.success('已创建批量生成任务')
@@ -1695,20 +1724,20 @@ const ChapterStudio: React.FC = () => {
                 loadingDetail={loadingDetail}
                 shotDetail={shotDetail}
                 dialogLines={dialogLines}
+                frameImages={frameImages}
+                sceneLinks={sceneLinks}
+                shotCharacterLinks={shotCharacterLinks}
+                cameraUpdating={cameraUpdating}
+                promptAssetsUpdating={promptAssetsUpdating}
                 onAddDialogLine={addDialogLine}
                 onDeleteDialogLine={deleteDialogLine}
-                frameImages={frameImages}
-                onAddFrameImage={addFrameImage}
-                onDeleteFrameImage={deleteFrameImage}
-                sceneLinks={sceneLinks}
-                actorImageLinks={actorImageLinks}
-                propLinks={propLinks}
-                costumeLinks={costumeLinks}
-                onAddLink={addLink}
+                onUpdatePromptScene={updatePromptScene}
+                onUpdatePromptActors={updatePromptActors}
                 selectedShot={selectedShot}
                 allShots={shots}
                 generating={generating}
                 onPatchShotDetail={patchShotDetailLocal}
+                onPatchShotDetailImmediate={patchShotDetailImmediate}
                 onGenerate={generateFrameImageTask}
                 onClose={() => setPrefs((p) => ({ ...p, inspectorOpen: false }))}
               />
@@ -1752,20 +1781,20 @@ const ChapterStudio: React.FC = () => {
                     loadingDetail={loadingDetail}
                     shotDetail={shotDetail}
                     dialogLines={dialogLines}
+                    frameImages={frameImages}
+                    sceneLinks={sceneLinks}
+                    shotCharacterLinks={shotCharacterLinks}
+                    cameraUpdating={cameraUpdating}
+                    promptAssetsUpdating={promptAssetsUpdating}
                     onAddDialogLine={addDialogLine}
                     onDeleteDialogLine={deleteDialogLine}
-                    frameImages={frameImages}
-                    onAddFrameImage={addFrameImage}
-                    onDeleteFrameImage={deleteFrameImage}
-                    sceneLinks={sceneLinks}
-                    actorImageLinks={actorImageLinks}
-                    propLinks={propLinks}
-                    costumeLinks={costumeLinks}
-                    onAddLink={addLink}
+                    onUpdatePromptScene={updatePromptScene}
+                    onUpdatePromptActors={updatePromptActors}
                     selectedShot={selectedShot}
                     allShots={shots}
                     generating={generating}
                     onPatchShotDetail={patchShotDetailLocal}
+                    onPatchShotDetailImmediate={patchShotDetailImmediate}
                     onGenerate={generateFrameImageTask}
                     onClose={() => setPrefs((p) => ({ ...p, inspectorOpen: false }))}
                   />
@@ -1823,43 +1852,43 @@ function Inspector(props: {
   loadingDetail: boolean
   shotDetail: ShotDetailRead | null
   dialogLines: ShotDialogLineRead[]
+  frameImages: ShotFrameImageRead[]
+  sceneLinks: ProjectSceneLinkRead[]
+  shotCharacterLinks: ShotCharacterLinkRead[]
+  cameraUpdating: boolean
+  promptAssetsUpdating: boolean
   onAddDialogLine: (text: string) => Promise<void>
   onDeleteDialogLine: (lineId: number) => Promise<void>
-  frameImages: ShotFrameImageRead[]
-  onAddFrameImage: (frameType: 'first' | 'key' | 'last', fileId: string) => Promise<void>
-  onDeleteFrameImage: (imageId: number) => Promise<void>
-  sceneLinks: ProjectSceneLinkRead[]
-  actorImageLinks: ProjectActorLinkRead[]
-  propLinks: ProjectPropLinkRead[]
-  costumeLinks: ProjectCostumeLinkRead[]
-  onAddLink: (type: 'scene' | 'actor-image' | 'prop' | 'costume', assetId: string) => Promise<void>
+  onUpdatePromptScene: (sceneId?: string) => Promise<void>
+  onUpdatePromptActors: (actorIds: string[]) => Promise<void>
   selectedShot: StudioShot | null
   allShots: StudioShot[]
   generating: boolean
   onGenerate: () => void
   onClose: () => void
   onPatchShotDetail: (patch: Partial<ShotDetailRead>) => void
+  onPatchShotDetailImmediate: (patch: Partial<ShotDetailRead>) => Promise<void>
 }) {
   const {
     loadingDetail,
     shotDetail,
     dialogLines,
+    frameImages,
+    sceneLinks,
+    shotCharacterLinks,
+    cameraUpdating,
+    promptAssetsUpdating,
     onAddDialogLine,
     onDeleteDialogLine,
-    frameImages,
-    onAddFrameImage,
-    onDeleteFrameImage,
-    sceneLinks,
-    actorImageLinks,
-    propLinks,
-    costumeLinks,
-    onAddLink,
+    onUpdatePromptScene,
+    onUpdatePromptActors,
     selectedShot,
     allShots,
     generating,
     onGenerate,
     onClose,
     onPatchShotDetail,
+    onPatchShotDetailImmediate,
   } = props
   const [imageVersion, setImageVersion] = useState('v1')
   const [refImageType, setRefImageType] = useState<string[]>([])
@@ -1869,12 +1898,19 @@ function Inspector(props: {
   const [relatedShotId, setRelatedShotId] = useState<string | undefined>(undefined)
   const [newDialogText, setNewDialogText] = useState('')
   const [creatingDialog, setCreatingDialog] = useState(false)
-  const [newFrameFileId, setNewFrameFileId] = useState('')
-  const [newFrameType, setNewFrameType] = useState<'first' | 'key' | 'last'>('key')
-  const [creatingFrame, setCreatingFrame] = useState(false)
-  const [newLinkAssetId, setNewLinkAssetId] = useState('')
-  const [newLinkType, setNewLinkType] = useState<'scene' | 'actor-image' | 'prop' | 'costume'>('scene')
-  const [creatingLink, setCreatingLink] = useState(false)
+  const [imagePromptTab, setImagePromptTab] = useState<'head' | 'mid' | 'tail'>('mid')
+  const [imagePromptGenerating, setImagePromptGenerating] = useState(false)
+  const [imagePromptTaskStatus, setImagePromptTaskStatus] = useState<string | null>(null)
+  const [videoPromptFrameType, setVideoPromptFrameType] = useState<PromptFrameType>('key')
+  const [videoPromptGenerating, setVideoPromptGenerating] = useState(false)
+  const [inspectorTabKey, setInspectorTabKey] = useState('camera')
+  const [sceneNameMap, setSceneNameMap] = useState<Record<string, string>>({})
+  const [characterNameMap, setCharacterNameMap] = useState<Record<string, string>>({})
+  const [keyframeCards, setKeyframeCards] = useState<Record<PromptFrameType, KeyframeCardState>>({
+    first: { loading: false, taskStatus: null, taskId: null, thumbs: [], modalOpen: false, applyingFileId: null },
+    key: { loading: false, taskStatus: null, taskId: null, thumbs: [], modalOpen: false, applyingFileId: null },
+    last: { loading: false, taskStatus: null, taskId: null, thumbs: [], modalOpen: false, applyingFileId: null },
+  })
 
   useEffect(() => {
     setHideShot(Boolean(selectedShot?.hidden))
@@ -1883,6 +1919,323 @@ function Inspector(props: {
   useEffect(() => {
     setRelatedShotId(undefined)
   }, [selectedShot?.id])
+
+  const sceneIds = useMemo(() => Array.from(new Set(sceneLinks.map((x) => x.scene_id).filter(Boolean))), [sceneLinks])
+  const characterIds = useMemo(() => Array.from(new Set(shotCharacterLinks.map((x) => x.character_id).filter(Boolean))), [shotCharacterLinks])
+
+  useEffect(() => {
+    if (sceneIds.length === 0) {
+      setSceneNameMap({})
+      return
+    }
+    void (async () => {
+      const entries = await Promise.all(
+        sceneIds.map(async (id) => {
+          try {
+            const r = await StudioEntitiesApi.get('scene', id)
+            const d = r.data as { name?: string } | null | undefined
+            return [id, d?.name?.trim() || id] as const
+          } catch {
+            return [id, id] as const
+          }
+        }),
+      )
+      setSceneNameMap(Object.fromEntries(entries))
+    })()
+  }, [sceneIds])
+
+  useEffect(() => {
+    if (characterIds.length === 0) {
+      setCharacterNameMap({})
+      return
+    }
+    void (async () => {
+      const entries = await Promise.all(
+        characterIds.map(async (id) => {
+          try {
+            const r = await StudioEntitiesApi.get('character', id)
+            const d = r.data as { name?: string } | null | undefined
+            return [id, d?.name?.trim() || id] as const
+          } catch {
+            return [id, id] as const
+          }
+        }),
+      )
+      setCharacterNameMap(Object.fromEntries(entries))
+    })()
+  }, [characterIds])
+
+  const getPromptFromDetailByType = (frameType: PromptFrameType): string => {
+    if (!shotDetail) return ''
+    if (frameType === 'first') return shotDetail.first_frame_prompt ?? ''
+    if (frameType === 'last') return shotDetail.last_frame_prompt ?? ''
+    return shotDetail.key_frame_prompt ?? ''
+  }
+
+  const patchPromptToDetailByType = (frameType: PromptFrameType, prompt: string) => {
+    if (frameType === 'first') {
+      onPatchShotDetail({ first_frame_prompt: prompt })
+      return
+    }
+    if (frameType === 'last') {
+      onPatchShotDetail({ last_frame_prompt: prompt })
+      return
+    }
+    onPatchShotDetail({ key_frame_prompt: prompt })
+  }
+
+  const frameLabel: Record<PromptFrameType, string> = { first: '首帧', key: '关键帧', last: '尾帧' }
+  const promptTabByFrame: Record<PromptFrameType, 'head' | 'mid' | 'tail'> = { first: 'head', key: 'mid', last: 'tail' }
+  const promptByFrame: Record<PromptFrameType, string> = {
+    first: shotDetail?.first_frame_prompt ?? '',
+    key: shotDetail?.key_frame_prompt ?? '',
+    last: shotDetail?.last_frame_prompt ?? '',
+  }
+
+  const updateCardState = (frameType: PromptFrameType, patch: Partial<KeyframeCardState>) => {
+    setKeyframeCards((prev) => ({ ...prev, [frameType]: { ...prev[frameType], ...patch } }))
+  }
+
+  const getLatestFrameSlotId = async (frameType: PromptFrameType): Promise<number | null> => {
+    if (!selectedShot?.id) return null
+    const res = await StudioShotFrameImagesService.listShotFrameImagesApiV1StudioShotFrameImagesGet({
+      shotDetailId: selectedShot.id,
+      order: null,
+      isDesc: false,
+      page: 1,
+      pageSize: 100,
+    })
+    const items = (res.data?.items ?? []) as ShotFrameImageRead[]
+    const slot = items.find((x) => x.frame_type === frameType)
+    return slot?.id ?? null
+  }
+
+  const loadCardThumbs = async (frameType: PromptFrameType, slotIdOverride?: number | null, retryCount = 1) => {
+    const localSlotId = frameImages.find((x) => x.frame_type === frameType)?.id ?? null
+    const slotId = slotIdOverride ?? localSlotId ?? (await getLatestFrameSlotId(frameType))
+    if (!slotId) {
+      updateCardState(frameType, { thumbs: [] })
+      return
+    }
+    let thumbs: Array<{ linkId: number; fileId: string; thumbUrl: string }> = []
+    for (let i = 0; i < retryCount; i += 1) {
+      const links = await listTaskLinksNormalized({
+        resourceType: 'image',
+        relationType: 'shot_frame_image',
+        relationEntityId: String(slotId),
+        order: 'updated_at',
+        isDesc: true,
+        page: 1,
+        pageSize: 100,
+      })
+      const seen = new Set<string>()
+      thumbs = links
+        .filter((l) => Boolean(l.file_id))
+        .filter((l) => {
+          const fid = String(l.file_id)
+          if (seen.has(fid)) return false
+          seen.add(fid)
+          return true
+        })
+        .map((l) => ({
+          linkId: l.id,
+          fileId: String(l.file_id),
+          thumbUrl: buildFileDownloadUrl(String(l.file_id)) ?? '',
+        }))
+      if (thumbs.length > 0 || i === retryCount - 1) break
+      await sleep(800)
+    }
+    updateCardState(frameType, { thumbs })
+  }
+
+  const generateKeyframeCard = async (frameType: PromptFrameType) => {
+    if (!selectedShot?.id) {
+      message.warning('请先选择一个分镜')
+      return
+    }
+    if (!promptByFrame[frameType].trim()) {
+      message.warning(`请先在画面描述中填写${frameLabel[frameType]}提示词`)
+      setInspectorTabKey('prompt_image')
+      setImagePromptTab(promptTabByFrame[frameType])
+      return
+    }
+
+    updateCardState(frameType, { loading: true, taskStatus: 'pending', taskId: null })
+    try {
+      const created = await StudioImageTasksService.createShotFrameImageGenerationTaskApiV1StudioImageTasksShotShotIdFrameImageTasksPost({
+        shotId: selectedShot.id,
+        requestBody: { frame_type: frameType, model_id: null } as any,
+      })
+      const taskId = created.data?.task_id
+      if (!taskId) {
+        message.error('生成任务创建失败：缺少任务 ID')
+        updateCardState(frameType, { loading: false, taskStatus: 'failed' })
+        return
+      }
+      updateCardState(frameType, { taskId })
+
+      let finalStatus = 'pending'
+      for (let i = 0; i < 30; i += 1) {
+        await sleep(2000)
+        const statusRes = await FilmService.getTaskStatusApiV1FilmTasksTaskIdStatusGet({ taskId })
+        const status = statusRes.data?.status
+        if (!status) continue
+        finalStatus = status
+        updateCardState(frameType, { taskStatus: status })
+        if (status === 'succeeded' || status === 'failed' || status === 'cancelled') break
+      }
+      if (finalStatus === 'succeeded') {
+        const latestSlotId = await getLatestFrameSlotId(frameType)
+        await loadCardThumbs(frameType, latestSlotId, 5)
+      }
+    } catch {
+      updateCardState(frameType, { taskStatus: 'failed' })
+      message.error(`${frameLabel[frameType]}生成失败`)
+    } finally {
+      updateCardState(frameType, { loading: false })
+    }
+  }
+
+  const applyCardImage = async (frameType: PromptFrameType, fileId: string) => {
+    const slot = frameImages.find((x) => x.frame_type === frameType)
+    if (!slot) return
+    updateCardState(frameType, { applyingFileId: fileId })
+    try {
+      await StudioShotFrameImagesService.updateShotFrameImageApiV1StudioShotFrameImagesImageIdPatch({
+        imageId: slot.id,
+        requestBody: { file_id: fileId } as any,
+      })
+      await loadCardThumbs(frameType)
+      message.success('已切换使用图片')
+    } catch {
+      message.error('切换失败')
+    } finally {
+      updateCardState(frameType, { applyingFileId: null })
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedShot?.id) return
+    void Promise.all([loadCardThumbs('first'), loadCardThumbs('key'), loadCardThumbs('last')])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedShot?.id, frameImages.map((x) => `${x.id}:${x.file_id ?? ''}`).join('|')])
+
+  const handleGenerateVideoPrompt = async () => {
+    if (!selectedShot?.id) {
+      message.warning('请先选择一个分镜')
+      return
+    }
+
+    setVideoPromptGenerating(true)
+    try {
+      const created = await FilmService.createShotFramePromptTaskApiV1FilmTasksShotFramePromptsPost({
+        requestBody: {
+          shot_id: selectedShot.id,
+          frame_type: videoPromptFrameType,
+        },
+      })
+      const taskId = created.data?.task_id
+      if (!taskId) {
+        message.error('生成任务创建失败：缺少任务 ID')
+        return
+      }
+
+      let finalStatus = 'pending'
+      for (let i = 0; i < 30; i += 1) {
+        await sleep(2000)
+        const statusRes = await FilmService.getTaskStatusApiV1FilmTasksTaskIdStatusGet({ taskId })
+        const status = statusRes.data?.status
+        if (!status) continue
+        finalStatus = status
+        if (status === 'succeeded' || status === 'failed' || status === 'cancelled') break
+      }
+
+      if (finalStatus === 'succeeded') {
+        const resultRes = await FilmService.getTaskResultApiV1FilmTasksTaskIdResultGet({ taskId })
+        const result = (resultRes.data?.result ?? null) as Record<string, unknown> | null
+        const prompt = typeof result?.prompt === 'string' ? result.prompt : ''
+        if (!prompt.trim()) {
+          message.warning('生成完成，但未返回提示词')
+          return
+        }
+        patchPromptToDetailByType(videoPromptFrameType, prompt)
+        message.success('视频提示词已生成')
+        return
+      }
+
+      if (finalStatus === 'failed' || finalStatus === 'cancelled') {
+        message.error('视频提示词生成失败')
+      } else {
+        message.warning('生成任务仍在执行，请稍后重试')
+      }
+    } catch {
+      message.error('发起视频提示词生成失败')
+    } finally {
+      setVideoPromptGenerating(false)
+    }
+  }
+
+  const handleGenerateImagePrompt = async () => {
+    if (!selectedShot?.id) {
+      message.warning('请先选择一个分镜')
+      return
+    }
+    if (!shotDetail) return
+
+    const frameType: PromptFrameType = imagePromptTab === 'head' ? 'first' : imagePromptTab === 'tail' ? 'last' : 'key'
+    setImagePromptGenerating(true)
+    setImagePromptTaskStatus('pending')
+    try {
+      const created = await FilmService.createShotFramePromptTaskApiV1FilmTasksShotFramePromptsPost({
+        requestBody: {
+          shot_id: selectedShot.id,
+          frame_type: frameType,
+        },
+      })
+      const taskId = created.data?.task_id
+      if (!taskId) {
+        message.error('生成任务创建失败：缺少任务 ID')
+        return
+      }
+
+      let finalStatus = 'pending'
+      for (let i = 0; i < 30; i += 1) {
+        await sleep(2000)
+        const statusRes = await FilmService.getTaskStatusApiV1FilmTasksTaskIdStatusGet({ taskId })
+        const status = statusRes.data?.status
+        if (!status) continue
+        finalStatus = status
+        setImagePromptTaskStatus(status)
+        if (status === 'succeeded' || status === 'failed' || status === 'cancelled') break
+      }
+
+      if (finalStatus === 'succeeded') {
+        const resultRes = await FilmService.getTaskResultApiV1FilmTasksTaskIdResultGet({ taskId })
+        const result = (resultRes.data?.result ?? null) as Record<string, unknown> | null
+        const prompt = typeof result?.prompt === 'string' ? result.prompt : ''
+        if (!prompt.trim()) {
+          message.warning('生成完成，但未返回提示词')
+          return
+        }
+        patchPromptToDetailByType(frameType, prompt)
+        setImagePromptTaskStatus('succeeded')
+        message.success('图片提示词已生成')
+        return
+      }
+      if (finalStatus === 'failed' || finalStatus === 'cancelled') {
+        setImagePromptTaskStatus(finalStatus)
+        message.error('图片提示词生成失败')
+      } else {
+        setImagePromptTaskStatus(finalStatus)
+        message.warning('生成任务仍在执行，请稍后重试')
+      }
+    } catch {
+      setImagePromptTaskStatus('failed')
+      message.error('发起图片提示词生成失败')
+    } finally {
+      setImagePromptGenerating(false)
+    }
+  }
 
   return (
     <div className="w-full h-full flex flex-col min-h-0">
@@ -1903,6 +2256,8 @@ function Inspector(props: {
       <div className="cs-inspector flex-1 min-h-0 overflow-auto">
         <Tabs
           tabPosition="left"
+          activeKey={inspectorTabKey}
+          onChange={setInspectorTabKey}
           items={[
             {
               key: 'camera',
@@ -1926,7 +2281,8 @@ function Inspector(props: {
                               buttonStyle="solid"
                               size="small"
                               options={CAMERA_SHOT_OPTIONS}
-                              onChange={(e) => onPatchShotDetail({ camera_shot: e.target.value })}
+                              onChange={(e) => void onPatchShotDetailImmediate({ camera_shot: e.target.value })}
+                              disabled={cameraUpdating}
                             />
                           </div>
                           <div>
@@ -1936,7 +2292,8 @@ function Inspector(props: {
                               optionType="button"
                               size="small"
                               options={CAMERA_ANGLE_OPTIONS}
-                              onChange={(e) => onPatchShotDetail({ angle: e.target.value })}
+                              onChange={(e) => void onPatchShotDetailImmediate({ angle: e.target.value })}
+                              disabled={cameraUpdating}
                             />
                           </div>
                           <div>
@@ -1945,28 +2302,33 @@ function Inspector(props: {
                               value={shotDetail.movement}
                               size="small"
                               options={CAMERA_MOVEMENT_OPTIONS}
-                              onChange={(e) => onPatchShotDetail({ movement: e.target.value })}
+                              onChange={(e) => void onPatchShotDetailImmediate({ movement: e.target.value })}
+                              disabled={cameraUpdating}
                             />
                           </div>
                           <div>
-                            <div className="text-gray-500 text-xs mb-1">时长（0.5–30s）</div>
+                            <div className="text-gray-500 text-xs mb-1">时长（1–30s，整数）</div>
                             <div className="flex items-center gap-2">
                               <Slider
-                                min={0.5}
+                                min={1}
                                 max={30}
-                                step={0.5}
-                                value={shotDetail.duration ?? 0}
+                                step={1}
+                                value={Math.max(1, Math.min(30, Math.round(shotDetail.duration ?? 1)))}
                                 style={{ flex: 1 }}
-                                onChange={(v) => onPatchShotDetail({ duration: Number(v) })}
+                                onChange={(v) => void onPatchShotDetailImmediate({ duration: Math.round(Number(v)) })}
+                                disabled={cameraUpdating}
                               />
                               <Input
                                 size="small"
-                                value={`${shotDetail.duration ?? 0}`}
+                                value={`${Math.max(1, Math.min(30, Math.round(shotDetail.duration ?? 1)))}`}
                                 style={{ width: 72 }}
                                 onChange={(e) => {
-                                  const n = Number(e.target.value)
-                                  if (Number.isFinite(n)) onPatchShotDetail({ duration: n })
+                                  const raw = Number(e.target.value)
+                                  if (!Number.isFinite(raw)) return
+                                  const n = Math.max(1, Math.min(30, Math.round(raw)))
+                                  void onPatchShotDetailImmediate({ duration: n })
                                 }}
+                                disabled={cameraUpdating}
                               />
                             </div>
                           </div>
@@ -2012,24 +2374,27 @@ function Inspector(props: {
                         <div className="text-gray-500 text-xs mb-1">场景</div>
                         <Select
                           showSearch
-                          placeholder="搜索场景（项目/全局资产库）"
+                          placeholder="选择当前镜头场景"
                           className="w-full"
-                          options={[
-                            { value: 'scene1', label: '城郊老旧小区夜景' },
-                            { value: 'scene2', label: '十平米出租屋' },
-                          ]}
+                          value={sceneLinks.find((x) => (x.shot_id ?? null) === selectedShot?.id)?.scene_id ?? shotDetail?.scene_id ?? undefined}
+                          onChange={(v) => void onUpdatePromptScene(typeof v === 'string' ? v : undefined)}
+                          allowClear
+                          disabled={promptAssetsUpdating}
+                          optionLabelProp="label"
+                          options={sceneIds.map((id) => ({ value: id, label: sceneNameMap[id] ?? id }))}
                         />
                       </div>
                       <div>
                         <div className="text-gray-500 text-xs mb-1">角色</div>
                         <Select
                           mode="multiple"
-                          placeholder="多选角色（智能提取 + 资产库添加）"
+                          placeholder="多选当前镜头角色"
                           className="w-full"
-                          options={[
-                            { value: 'actor_xiaoyu', label: '小雨' },
-                            { value: 'actor_achuan', label: '阿川' },
-                          ]}
+                          value={Array.from(new Set(shotCharacterLinks.map((x) => x.character_id)))}
+                          onChange={(vals) => void onUpdatePromptActors((vals as Array<string | number>).map((v) => String(v)))}
+                          disabled={promptAssetsUpdating}
+                          optionLabelProp="label"
+                          options={characterIds.map((id) => ({ value: id, label: characterNameMap[id] ?? id }))}
                         />
                       </div>
                       <div>
@@ -2115,174 +2480,80 @@ function Inspector(props: {
                     </div>
                   </div>
 
-                  <div className="cs-group">
-                    <div className="cs-group-title">
-                      <BulbOutlined /> 图片提示词
-                    </div>
-                    <div className="cs-hint">建议按“首/中/尾”分开维护，方便版本对比与迭代。</div>
-                    <div className="mt-3">
-                      <Tabs
-                        size="small"
-                        items={[
-                          {
-                            key: 'head',
-                            label: '首',
-                            children: (
+                </div>
+              ),
+            },
+            {
+              key: 'image_prompts',
+              label: '图片提示词',
+              children: (
+                <div className="cs-group">
+                  <div className="cs-group-title">
+                    <BulbOutlined /> 图片提示词
+                  </div>
+                  <div className="cs-hint">建议按“首/中/尾”分开维护，方便版本对比与迭代。</div>
+                  <div className="mt-3">
+                    <Tabs
+                      size="small"
+                      activeKey={imagePromptTab}
+                      onChange={(k) => setImagePromptTab(k as 'head' | 'mid' | 'tail')}
+                      items={[
+                        {
+                          key: 'head',
+                          label: '首',
+                          children: (
+                            <Spin spinning={imagePromptGenerating && imagePromptTab === 'head'} size="small">
                               <TextArea
                                 rows={3}
                                 className="font-mono text-xs"
                                 placeholder="首帧提示词…"
                                 value={shotDetail?.first_frame_prompt ?? ''}
+                                disabled={imagePromptGenerating && imagePromptTab === 'head'}
                                 onChange={(e) => onPatchShotDetail({ first_frame_prompt: e.target.value })}
                               />
-                            ),
-                          },
-                          {
-                            key: 'mid',
-                            label: '中',
-                            children: (
+                            </Spin>
+                          ),
+                        },
+                        {
+                          key: 'mid',
+                          label: '中',
+                          children: (
+                            <Spin spinning={imagePromptGenerating && imagePromptTab === 'mid'} size="small">
                               <TextArea
                                 rows={3}
                                 className="font-mono text-xs"
                                 placeholder="关键帧提示词…"
                                 value={shotDetail?.key_frame_prompt ?? ''}
+                                disabled={imagePromptGenerating && imagePromptTab === 'mid'}
                                 onChange={(e) => onPatchShotDetail({ key_frame_prompt: e.target.value })}
                               />
-                            ),
-                          },
-                          {
-                            key: 'tail',
-                            label: '尾',
-                            children: (
+                            </Spin>
+                          ),
+                        },
+                        {
+                          key: 'tail',
+                          label: '尾',
+                          children: (
+                            <Spin spinning={imagePromptGenerating && imagePromptTab === 'tail'} size="small">
                               <TextArea
                                 rows={3}
                                 className="font-mono text-xs"
                                 placeholder="尾帧提示词…"
                                 value={shotDetail?.last_frame_prompt ?? ''}
+                                disabled={imagePromptGenerating && imagePromptTab === 'tail'}
                                 onChange={(e) => onPatchShotDetail({ last_frame_prompt: e.target.value })}
                               />
-                            ),
-                          },
-                        ]}
-                      />
-                      <Space className="mt-3" wrap>
-                        <Button size="small" icon={<ThunderboltOutlined />} onClick={() => message.success('智能提取完成（Mock）')}>
-                          智能提取
-                        </Button>
-                        <Button size="small" type="primary" icon={<ThunderboltOutlined />} loading={generating} onClick={onGenerate}>
-                          生成
-                        </Button>
-                        <Button size="small" icon={<EditOutlined />} onClick={() => message.info('从模板应用（Mock）')}>
-                          从模板
-                        </Button>
-                      </Space>
-
-                      <div className="mt-4">
-                        <div className="text-gray-500 text-xs mb-2">分镜帧图（file_id）</div>
-                        <Space.Compact className="w-full">
-                          <Select
-                            size="small"
-                            value={newFrameType}
-                            style={{ width: 110 }}
-                            onChange={(v) => setNewFrameType(v)}
-                            options={[
-                              { value: 'first', label: '首帧' },
-                              { value: 'key', label: '关键帧' },
-                              { value: 'last', label: '尾帧' },
-                            ]}
-                          />
-                          <Input
-                            size="small"
-                            placeholder="输入 file_id，回车添加…"
-                            value={newFrameFileId}
-                            onChange={(e) => setNewFrameFileId(e.target.value)}
-                            onPressEnter={async () => {
-                              if (creatingFrame) return
-                              setCreatingFrame(true)
-                              try {
-                                await onAddFrameImage(newFrameType, newFrameFileId)
-                                setNewFrameFileId('')
-                                message.success('已添加帧图')
-                              } catch {
-                                message.error('添加帧图失败')
-                              } finally {
-                                setCreatingFrame(false)
-                              }
-                            }}
-                          />
-                        </Space.Compact>
-                        {frameImages.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {frameImages.map((img) => (
-                              <div key={img.id} className="flex items-center gap-2">
-                                <div className="text-xs text-gray-600 truncate flex-1 min-w-0">
-                                  {img.frame_type} · {img.file_id}
-                                </div>
-                                <Button
-                                  size="small"
-                                  type="text"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  onClick={() => {
-                                    Modal.confirm({
-                                      title: '删除该帧图？',
-                                      okText: '删除',
-                                      cancelText: '取消',
-                                      okButtonProps: { danger: true },
-                                      onOk: async () => {
-                                        try {
-                                          await onDeleteFrameImage(img.id)
-                                          message.success('已删除')
-                                        } catch {
-                                          message.error('删除失败')
-                                        }
-                                      },
-                                    })
-                                  }}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="text-gray-500 text-xs mb-2">镜头资产关联（按 ID 添加）</div>
-                        <Space.Compact className="w-full">
-                          <Select
-                            size="small"
-                            value={newLinkType}
-                            style={{ width: 120 }}
-                            onChange={(v) => setNewLinkType(v)}
-                            options={[
-                              { value: 'scene', label: `场景(${sceneLinks.length})` },
-                              { value: 'actor-image', label: `演员形象(${actorImageLinks.length})` },
-                              { value: 'prop', label: `道具(${propLinks.length})` },
-                              { value: 'costume', label: `服装(${costumeLinks.length})` },
-                            ]}
-                          />
-                          <Input
-                            size="small"
-                            placeholder="输入 asset_id，回车关联…"
-                            value={newLinkAssetId}
-                            onChange={(e) => setNewLinkAssetId(e.target.value)}
-                            onPressEnter={async () => {
-                              if (creatingLink) return
-                              setCreatingLink(true)
-                              try {
-                                await onAddLink(newLinkType, newLinkAssetId)
-                                setNewLinkAssetId('')
-                                message.success('已关联')
-                              } catch {
-                                message.error('关联失败')
-                              } finally {
-                                setCreatingLink(false)
-                              }
-                            }}
-                          />
-                        </Space.Compact>
-                      </div>
-                    </div>
+                            </Spin>
+                          ),
+                        },
+                      ]}
+                    />
+                    <Space className="mt-3" wrap>
+                      <Button size="small" type="primary" icon={<ThunderboltOutlined />} loading={imagePromptGenerating} onClick={handleGenerateImagePrompt}>
+                        生成
+                      </Button>
+                      {imagePromptTaskStatus ? <span className="text-xs text-gray-500">任务状态：{imagePromptTaskStatus}</span> : null}
+                    </Space>
                   </div>
                 </div>
               ),
@@ -2295,8 +2566,103 @@ function Inspector(props: {
                   <div className="cs-group-title">
                     <FileTextOutlined /> 视频提示词
                   </div>
-                  <TextArea rows={8} placeholder="独立视频提示词（支持多版本管理）…" className="font-mono text-xs" />
+                  <div className="mt-2 flex items-center gap-2">
+                    <Select<PromptFrameType>
+                      size="small"
+                      value={videoPromptFrameType}
+                      onChange={setVideoPromptFrameType}
+                      style={{ width: 120 }}
+                      options={[
+                        { value: 'first', label: '首帧' },
+                        { value: 'key', label: '关键帧' },
+                        { value: 'last', label: '尾帧' },
+                      ]}
+                    />
+                    <Button size="small" type="primary" loading={videoPromptGenerating} onClick={handleGenerateVideoPrompt}>
+                      生成
+                    </Button>
+                  </div>
+                  <TextArea
+                    rows={8}
+                    placeholder="独立视频提示词（支持多版本管理）…"
+                    className="font-mono text-xs"
+                    value={getPromptFromDetailByType(videoPromptFrameType)}
+                    onChange={(e) => patchPromptToDetailByType(videoPromptFrameType, e.target.value)}
+                  />
                   <div className="cs-hint mt-2">多版本管理：可结合右侧“生成与参考”一起迭代。</div>
+                </div>
+              ),
+            },
+            {
+              key: 'keyframe_gen',
+              label: '关键帧生成',
+              children: (
+                <div className="space-y-3">
+                  {(['first', 'key', 'last'] as PromptFrameType[]).map((ft) => {
+                    const st = keyframeCards[ft]
+                    const slot = frameImages.find((x) => x.frame_type === ft)
+                    const inUseFileId = slot?.file_id ? String(slot.file_id) : ''
+                    const statusText =
+                      st.taskStatus === 'pending'
+                        ? '排队中'
+                        : st.taskStatus === 'running'
+                          ? '生成中'
+                          : st.taskStatus === 'succeeded'
+                            ? '已完成'
+                            : st.taskStatus === 'failed'
+                              ? '失败'
+                              : st.taskStatus === 'cancelled'
+                                ? '已取消'
+                                : ''
+                    return (
+                      <div key={ft} className="cs-group">
+                        <div className="cs-group-title flex items-center justify-between gap-2">
+                          <span>{frameLabel[ft]}图片</span>
+                          <Space size={8}>
+                            {st.thumbs.length > 0 ? (
+                              <Button size="small" type="link" onClick={() => updateCardState(ft, { modalOpen: true })}>
+                                更多
+                              </Button>
+                            ) : null}
+                            <Button size="small" type="primary" loading={st.loading} onClick={() => void generateKeyframeCard(ft)}>
+                              生成
+                            </Button>
+                          </Space>
+                        </div>
+                        <div className="text-xs text-gray-500 min-h-5">{statusText}</div>
+                        {st.thumbs.length === 0 ? (
+                          <div className="mt-2 h-24 border border-dashed rounded flex items-center justify-center text-xs text-gray-400">暂无图片</div>
+                        ) : (
+                          <div className="mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
+                            {st.thumbs.slice(0, 4).map((it) => (
+                              <img key={it.linkId} src={it.thumbUrl} alt="" className="w-16 h-16 rounded object-cover border border-gray-200 shrink-0" />
+                            ))}
+                          </div>
+                        )}
+                        <Modal title={`${frameLabel[ft]}图片`} open={st.modalOpen} onCancel={() => updateCardState(ft, { modalOpen: false })} footer={null} width={720}>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {st.thumbs.map((it) => {
+                              const inUse = inUseFileId && inUseFileId === it.fileId
+                              return (
+                                <div key={it.linkId} className="border rounded p-2">
+                                  <img src={it.thumbUrl} alt="" className="w-full h-36 object-cover rounded" />
+                                  <div className="mt-2 flex items-center justify-between">
+                                    {inUse ? (
+                                      <Tag color="green">使用中</Tag>
+                                    ) : (
+                                      <Button size="small" loading={st.applyingFileId === it.fileId} onClick={() => void applyCardImage(ft, it.fileId)}>
+                                        使用
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </Modal>
+                      </div>
+                    )
+                  })}
                 </div>
               ),
             },

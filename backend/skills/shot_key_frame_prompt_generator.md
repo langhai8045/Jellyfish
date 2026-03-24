@@ -10,7 +10,7 @@
 
 ## 输出
 
-单个字符串 `prompt`，即关键帧画面描述提示词，可直接写入 `ShotDetail.key_frame_prompt`。
+单个中文字符串 `prompt`，即关键帧画面描述提示词，可直接写入 `ShotDetail.key_frame_prompt`。
 
 ## 实现与调用
 

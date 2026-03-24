@@ -4,7 +4,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.runnables import Runnable
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.chains.agents import (
     ShotFirstFramePromptAgent,
@@ -15,6 +17,7 @@ from app.core.db import async_session_maker
 from app.core.task_manager import DeliveryMode, SqlAlchemyTaskStore, TaskManager
 from app.core.task_manager.types import TaskStatus
 from app.dependencies import get_db, get_llm
+from app.models.studio import Shot, ShotDetail
 from app.schemas.common import ApiResponse, success_response
 
 from .common import (
@@ -22,7 +25,6 @@ from .common import (
     TaskCreated,
     _CreateOnlyTask,
     bind_task,
-    ensure_single_bind_target,
 )
 from .image_requests import ShotFrameImageTaskRequest
 
@@ -40,8 +42,6 @@ async def create_shot_frame_prompt_task(
     llm: Runnable = Depends(get_llm),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[TaskCreated]:
-    target_type, target_id = ensure_single_bind_target(body)
-
     frame_type = (body.frame_type or "").strip().lower()
     if frame_type not in {"first", "last", "key"}:
         raise HTTPException(status_code=400, detail="frame_type must be one of first/last/key")
@@ -56,11 +56,50 @@ async def create_shot_frame_prompt_task(
     store = SqlAlchemyTaskStore(db)
     tm = TaskManager(store=store, strategies={})
 
-    input_dict = body.model_dump(exclude={"project_id", "chapter_id", "shot_id", "frame_type"})
-    run_args: dict = {"frame_type": frame_type, "skill_id": skill_id, "input": input_dict}
+    shot_stmt = (
+        select(Shot)
+        .options(
+            selectinload(Shot.detail).selectinload(ShotDetail.dialog_lines),
+        )
+        .where(Shot.id == body.shot_id)
+    )
+    shot = (await db.execute(shot_stmt)).scalar_one_or_none()
+    if shot is None:
+        raise HTTPException(status_code=404, detail="Shot not found")
+    if shot.detail is None:
+        raise HTTPException(status_code=404, detail="Shot detail not found")
+
+    detail = shot.detail
+    dialog_summary = "\n".join(line.text for line in (detail.dialog_lines or []) if line.text)
+    input_dict = {
+        "script_excerpt": shot.script_excerpt or "",
+        "title": shot.title or "",
+        "camera_shot": detail.camera_shot.value if hasattr(detail.camera_shot, "value") else str(detail.camera_shot),
+        "angle": detail.angle.value if hasattr(detail.angle, "value") else str(detail.angle),
+        "movement": detail.movement.value if hasattr(detail.movement, "value") else str(detail.movement),
+        "atmosphere": detail.atmosphere or "",
+        "mood_tags": detail.mood_tags or [],
+        "vfx_type": detail.vfx_type.value if hasattr(detail.vfx_type, "value") else str(detail.vfx_type),
+        "vfx_note": detail.vfx_note or "",
+        "duration": detail.duration,
+        "scene_id": detail.scene_id,
+        "dialog_summary": dialog_summary,
+    }
+    run_args: dict = {
+        "shot_id": body.shot_id,
+        "frame_type": frame_type,
+        "skill_id": skill_id,
+        "input": input_dict,
+    }
 
     task_record = await tm.create(task=_CreateOnlyTask(), mode=DeliveryMode.async_polling, run_args=run_args)
-    await bind_task(db, task_id=task_record.id, target_type=target_type, target_id=target_id, relation_type=relation_type)
+    await bind_task(
+        db,
+        task_id=task_record.id,
+        target_type="shot",
+        target_id=body.shot_id,
+        relation_type=relation_type,
+    )
 
     async def _runner(task_id: str, args: dict) -> None:
         async with async_session_maker() as session:
@@ -68,9 +107,12 @@ async def create_shot_frame_prompt_task(
                 store2 = SqlAlchemyTaskStore(session)
                 await store2.set_status(task_id, TaskStatus.running)
                 await store2.set_progress(task_id, 10)
+                # 先提交 running 状态，避免长耗时执行期间任务一直显示 pending。
+                await session.commit()
 
                 ft = str(args.get("frame_type") or "")
                 sid = str(args.get("skill_id") or "")
+                shot_id = str(args.get("shot_id") or "")
                 inp = dict(args.get("input") or {})
 
                 if ft == "first":
@@ -81,6 +123,19 @@ async def create_shot_frame_prompt_task(
                     agent = ShotKeyFramePromptAgent(llm)
                 agent.load_skill(sid)
                 result = await agent.aextract(inp)
+
+                if not shot_id:
+                    raise RuntimeError("Missing shot_id in run args")
+                shot_detail = await session.get(ShotDetail, shot_id)
+                if shot_detail is None:
+                    raise RuntimeError("Shot detail not found when persisting prompt")
+
+                if ft == "first":
+                    shot_detail.first_frame_prompt = result.prompt
+                elif ft == "last":
+                    shot_detail.last_frame_prompt = result.prompt
+                else:
+                    shot_detail.key_frame_prompt = result.prompt
 
                 await store2.set_result(task_id, result.model_dump())
                 await store2.set_progress(task_id, 100)

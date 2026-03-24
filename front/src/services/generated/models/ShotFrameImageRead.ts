@@ -17,9 +17,9 @@ export type ShotFrameImageRead = {
      */
     frame_type: ShotFrameType;
     /**
-     * 关联的 FileItem ID
+     * 关联的 FileItem ID（可为空，允许先创建占位）
      */
-    file_id: string;
+    file_id?: (string | null);
     /**
      * 宽(px)
      */

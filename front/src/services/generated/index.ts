@@ -17,6 +17,7 @@ export type { ApiResponse_FilmShotlistResult_ } from './models/ApiResponse_FilmS
 export type { ApiResponse_GenerationTaskLinkRead_ } from './models/ApiResponse_GenerationTaskLinkRead_';
 export type { ApiResponse_ImportFromExtractionResponse_ } from './models/ApiResponse_ImportFromExtractionResponse_';
 export type { ApiResponse_list_PromptCategoryOptionRead__ } from './models/ApiResponse_list_PromptCategoryOptionRead__';
+export type { ApiResponse_list_ShotCharacterLinkRead__ } from './models/ApiResponse_list_ShotCharacterLinkRead__';
 export type { ApiResponse_ModelRead_ } from './models/ApiResponse_ModelRead_';
 export type { ApiResponse_ModelSettingsRead_ } from './models/ApiResponse_ModelSettingsRead_';
 export type { ApiResponse_NoneType_ } from './models/ApiResponse_NoneType_';
@@ -167,6 +168,7 @@ export type { ShotElementExtractionResult } from './models/ShotElementExtraction
 export type { ShotElements } from './models/ShotElements';
 export type { ShotFrameImageCreate } from './models/ShotFrameImageCreate';
 export type { ShotFrameImageRead } from './models/ShotFrameImageRead';
+export type { ShotFrameImageTaskRequest } from './models/ShotFrameImageTaskRequest';
 export type { ShotFrameImageUpdate } from './models/ShotFrameImageUpdate';
 export type { ShotFramePromptRequest } from './models/ShotFramePromptRequest';
 export type { ShotFrameType } from './models/ShotFrameType';

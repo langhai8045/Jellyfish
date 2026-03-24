@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,27 @@ from app.schemas.common import ApiResponse, success_response
 from app.schemas.studio.cast import ShotCharacterLinkCreate, ShotCharacterLinkRead
 
 router = APIRouter()
+
+
+@router.get(
+    "",
+    response_model=ApiResponse[list[ShotCharacterLinkRead]],
+    summary="查询镜头角色关联列表（ShotCharacterLink）",
+)
+async def list_shot_character_links(
+    shot_id: str = Query(..., description="镜头 ID"),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[list[ShotCharacterLinkRead]]:
+    if await db.get(Shot, shot_id) is None:
+        raise HTTPException(status_code=404, detail="Shot not found")
+
+    stmt = (
+        select(ShotCharacterLink)
+        .where(ShotCharacterLink.shot_id == shot_id)
+        .order_by(ShotCharacterLink.index.asc(), ShotCharacterLink.id.asc())
+    )
+    items = (await db.execute(stmt)).scalars().all()
+    return success_response([ShotCharacterLinkRead.model_validate(x) for x in items])
 
 
 @router.post(

@@ -189,7 +189,7 @@ class ShotFrameImageBase(BaseModel):
     id: int = Field(..., description="图片行 ID")
     shot_detail_id: str = Field(..., description="所属镜头细节 ID")
     frame_type: ShotFrameType = Field(..., description="帧类型：first/last/key")
-    file_id: str = Field(..., description="关联的 FileItem ID")
+    file_id: str | None = Field(None, description="关联的 FileItem ID（可为空，允许先创建占位）")
     width: int | None = Field(None, description="宽(px)")
     height: int | None = Field(None, description="高(px)")
     format: str = Field("png", description="格式")
@@ -198,7 +198,7 @@ class ShotFrameImageBase(BaseModel):
 class ShotFrameImageCreate(BaseModel):
     shot_detail_id: str
     frame_type: ShotFrameType
-    file_id: str
+    file_id: str | None = None
     width: int | None = None
     height: int | None = None
     format: str = "png"

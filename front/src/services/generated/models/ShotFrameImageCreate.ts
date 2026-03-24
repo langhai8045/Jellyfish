@@ -6,7 +6,7 @@ import type { ShotFrameType } from './ShotFrameType';
 export type ShotFrameImageCreate = {
     shot_detail_id: string;
     frame_type: ShotFrameType;
-    file_id: string;
+    file_id?: (string | null);
     width?: (number | null);
     height?: (number | null);
     format?: string;
