@@ -95,6 +95,39 @@ docker compose --env-file deploy/compose/.env -f deploy/compose/docker-compose.y
 On the first start, `backend/init_db.py` will run once to create tables (`backend-init-db` service).
 After it succeeds, the prompt template SQL will be imported automatically: `backend/sql/init_prompt_templte.sql` (`mysql-init-prompt-templates` service).
 
+## 🧑‍💻 Development setup (frontend & backend separately)
+
+### Ports
+
+- Frontend (Vite dev): `http://localhost:7788`
+- Backend (FastAPI): `http://localhost:8000` (Swagger at `/docs`)
+
+### Start backend
+
+```bash
+cd backend
+cp .env.example .env
+uv sync
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Start frontend
+
+```bash
+cd front
+pnpm install
+pnpm dev
+```
+
+### (Optional) Run only dependencies: MySQL + RustFS
+
+If you want to use MySQL + RustFS in development (instead of the default SQLite), start only the infrastructure services:
+
+```bash
+cp deploy/compose/.env.example deploy/compose/.env
+docker compose --env-file deploy/compose/.env -f deploy/compose/docker-compose.yml up -d mysql rustfs
+```
+
 ## 🚧 Development status / Roadmap
 
 The project is **actively developed**. Below is the current completion and planned work. Feedback and contributions via [Issues](https://github.com/Forget-C/Jellyfish/issues) are welcome.

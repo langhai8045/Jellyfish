@@ -95,6 +95,39 @@ docker compose --env-file deploy/compose/.env -f deploy/compose/docker-compose.y
 首次启动会自动运行一次 `backend/init_db.py` 创建表结构（`backend-init-db` 服务）。
 并在其成功后自动导入提示词模板 SQL：`backend/sql/init_prompt_templte.sql`（`mysql-init-prompt-templates` 服务）。
 
+## 🧑‍💻 开发环境启动（前后端分离）
+
+### 端口
+
+- 前端（Vite dev）：`http://localhost:7788`
+- 后端（FastAPI）：`http://localhost:8000`（`/docs` 为 Swagger）
+
+### 启动后端
+
+```bash
+cd backend
+cp .env.example .env
+uv sync
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 启动前端
+
+```bash
+cd front
+pnpm install
+pnpm dev
+```
+
+### （可选）仅启动依赖服务 MySQL + RustFS
+
+如果你希望开发时使用 MySQL + RustFS（而不是默认 SQLite），可以只启动基础设施服务：
+
+```bash
+cp deploy/compose/.env.example deploy/compose/.env
+docker compose --env-file deploy/compose/.env -f deploy/compose/docker-compose.yml up -d mysql rustfs
+```
+
 
 ## 🚧 开发状态 / Roadmap
 
