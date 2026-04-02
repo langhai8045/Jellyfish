@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, Button, Empty, Modal, Input, message, Space, Select, Pagination } from 'antd'
-import { PlusOutlined, UserOutlined } from '@ant-design/icons'
+import { EditOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { StudioProjectsService, StudioShotLinksService } from '../../../../../services/generated'
 import type { ProjectActorLinkRead, ProjectCostumeLinkRead } from '../../../../../services/generated'
@@ -306,7 +306,9 @@ export function RolesTab() {
                 extra={
                   <Space size="small">
                     <Button
+                      type="default"
                       size="small"
+                      icon={<EditOutlined />}
                       onClick={() => {
                         if (!projectId) return
                         navigate(`/projects/${projectId}/roles/${c.id}/edit`)

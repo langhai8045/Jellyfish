@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Card, Empty, Input, InputNumber, Modal, Pagination, Space, Tag, message } from 'antd'
+import { Button, Card, Empty, Input, Modal, Pagination, Space, Tag, message } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { StudioEntitiesApi } from '../../../../services/studioEntities'
 import { useNavigate } from 'react-router-dom'
 import { resolveAssetUrl } from '../utils'
 import { DisplayImageCard } from '../components/DisplayImageCard'
-import { PROJECT_STYLE_OPTIONS_BY_VISUAL, ProjectVisualStyleAndStyleFields } from '../../project/ProjectVisualStyleAndStyleFields'
+import { ActorEntityFormModal, type ActorEntityLike } from '../components/ActorEntityFormModal'
 
 export function ActorsTab() {
   const navigate = useNavigate()
@@ -17,13 +17,7 @@ export function ActorsTab() {
   const [total, setTotal] = useState(0)
 
   const [editOpen, setEditOpen] = useState(false)
-  const [editing, setEditing] = useState<any | null>(null)
-  const [formName, setFormName] = useState('')
-  const [formDesc, setFormDesc] = useState('')
-  const [formTags, setFormTags] = useState('')
-  const [formViewCount, setFormViewCount] = useState<number | null>(null)
-  const [formVisualStyle, setFormVisualStyle] = useState<'现实' | '动漫'>('现实')
-  const [formStyle, setFormStyle] = useState<string>(PROJECT_STYLE_OPTIONS_BY_VISUAL['现实'][0]?.value ?? '真人都市')
+  const [editing, setEditing] = useState<ActorEntityLike | null>(null)
 
   const load = async (opts?: { page?: number; pageSize?: number; q?: string }) => {
     setLoading(true)
@@ -55,78 +49,19 @@ export function ActorsTab() {
 
   const filtered = useMemo(() => actors, [actors])
 
-  const normalizeTags = (input: string) =>
-    input
-      .split(/[,，\n]/g)
-      .map((t) => t.trim())
-      .filter(Boolean)
-
   const openCreate = () => {
     setEditing(null)
-    setFormName('')
-    setFormDesc('')
-    setFormTags('')
-    setFormViewCount(null)
-    setFormVisualStyle('现实')
-    setFormStyle(PROJECT_STYLE_OPTIONS_BY_VISUAL['现实'][0]?.value ?? '真人都市')
     setEditOpen(true)
   }
 
-  const openEdit = (a: any) => {
+  const openEdit = (a: ActorEntityLike) => {
     setEditing(a)
-    setFormName(a.name)
-    setFormDesc(a.description ?? '')
-    setFormTags((a.tags ?? []).join(', '))
-    setFormViewCount(a.view_count ?? null)
-    setFormVisualStyle((a.visual_style as '现实' | '动漫' | undefined) ?? '现实')
-    {
-      const nextVisual = ((a.visual_style as '现实' | '动漫' | undefined) ?? '现实') as '现实' | '动漫'
-      setFormStyle((a.style as string | undefined) ?? PROJECT_STYLE_OPTIONS_BY_VISUAL[nextVisual]?.[0]?.value ?? '真人都市')
-    }
     setEditOpen(true)
   }
 
-  const submit = async () => {
-    const name = formName.trim()
-    if (!name) {
-      message.warning('请输入名称')
-      return
-    }
-    try {
-      if (!editing) {
-        const created = await StudioEntitiesApi.create('actor', {
-          id: crypto?.randomUUID?.() ?? `actor_${Date.now()}`,
-          name,
-          description: formDesc.trim() || undefined,
-          tags: normalizeTags(formTags),
-          view_count: formViewCount ?? undefined,
-          visual_style: formVisualStyle,
-          style: formStyle,
-          prompt_template_id: null,
-        })
-        message.success('创建成功')
-        const createdItem = created.data as any
-        if (createdItem && page === 1 && !search.trim()) {
-          setActors((prev) => [createdItem, ...prev.filter((it) => it.id !== createdItem.id)])
-          setTotal((prev) => prev + 1)
-        }
-      } else {
-        await StudioEntitiesApi.update('actor', editing.id, {
-          name,
-          description: formDesc.trim() || null,
-          tags: normalizeTags(formTags),
-          view_count: formViewCount ?? null,
-          visual_style: formVisualStyle,
-          style: formStyle,
-        })
-        message.success('更新成功')
-      }
-      setEditOpen(false)
-      await load({ page: 1 })
-      setPage(1)
-    } catch {
-      message.error(editing ? '更新失败' : '创建失败')
-    }
+  const handleModalCancel = () => {
+    setEditOpen(false)
+    setEditing(null)
   }
 
   return (
@@ -226,43 +161,20 @@ export function ActorsTab() {
         />
       </div>
 
-      <Modal
-        title={editing ? '编辑演员' : '新建演员'}
+      <ActorEntityFormModal
         open={editOpen}
-        onCancel={() => setEditOpen(false)}
-        onOk={submit}
-        okText={editing ? '保存' : '创建'}
-      >
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm text-gray-600 mb-1">名称</div>
-            <Input value={formName} onChange={(e) => setFormName(e.target.value)} />
-          </div>
-          <div>
-            <div className="text-sm text-gray-600 mb-1">描述</div>
-            <Input.TextArea rows={3} value={formDesc} onChange={(e) => setFormDesc(e.target.value)} />
-          </div>
-          <div>
-            <div className="text-sm text-gray-600 mb-1">标签（逗号分隔）</div>
-            <Input value={formTags} onChange={(e) => setFormTags(e.target.value)} />
-          </div>
-          <div>
-            <div className="text-sm text-gray-600 mb-1">视角数（可选）</div>
-            <InputNumber className="w-full" min={1} max={4} value={formViewCount} onChange={(v) => setFormViewCount(v ?? null)} />
-          </div>
-          <div>
-            <div className="text-sm text-gray-600 mb-1">视觉风格</div>
-            <ProjectVisualStyleAndStyleFields
-              visual_style={formVisualStyle}
-              style={formStyle}
-              onChange={(next) => {
-                setFormVisualStyle(next.visual_style)
-                setFormStyle(next.style)
-              }}
-            />
-          </div>
-        </div>
-      </Modal>
+        editing={editing}
+        onCancel={handleModalCancel}
+        onSuccess={async (detail) => {
+          const createdItem = detail?.created as { id?: string } | undefined
+          if (createdItem && page === 1 && !search.trim()) {
+            setActors((prev) => [createdItem, ...prev.filter((it) => it.id !== createdItem.id)])
+            setTotal((prev) => prev + 1)
+          }
+          await load({ page: 1 })
+          setPage(1)
+        }}
+      />
     </Card>
   )
 }

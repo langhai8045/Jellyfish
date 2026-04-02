@@ -1,39 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Card, Input, InputNumber, Row, Col, Tag, Button, message, Modal, Space, Pagination } from 'antd'
+import { Card, Input, Row, Col, Tag, Button, message, Modal, Space, Pagination } from 'antd'
 import { EditOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 import { resolveAssetUrl } from '../utils'
 import { DisplayImageCard } from '../components/DisplayImageCard'
-import { PROJECT_STYLE_OPTIONS_BY_VISUAL, ProjectVisualStyleAndStyleFields } from '../../project/ProjectVisualStyleAndStyleFields'
+import {
+  StudioAssetTypeFormModal,
+  normalizeStudioAsset,
+  type StudioAssetLike,
+} from '../components/StudioAssetTypeFormModal'
 
-function normalizeTags(input: string): string[] {
-  return input
-    .split(/[,，\n]/g)
-    .map((t) => t.trim())
-    .filter(Boolean)
-}
-
-export type StudioAssetLike = {
-  id: string
-  name: string
-  description?: string
-  thumbnail?: string
-  tags?: string[]
-  view_count?: number
-}
+export type { StudioAssetLike }
 
 function normalizeAsset(asset: StudioAssetLike): StudioAssetLike {
-  return {
-    ...asset,
-    // 保持原始 thumbnail 字段来源为接口返回的 item.thumbnail
-    // 渲染时再统一在 resolveAssetUrl 里做 URL/file_id 适配
-    thumbnail: asset.thumbnail,
-  }
-}
-
-function clampViewCount(value: number | null): number | null {
-  if (value === null) return null
-  return Math.max(0, Math.min(4, Math.trunc(value)))
+  return normalizeStudioAsset(asset)
 }
 
 type AssetMutationPayload = Record<string, unknown> & {
@@ -76,12 +56,7 @@ export function AssetTypeTab({
 
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState<StudioAssetLike | null>(null)
-  const [formName, setFormName] = useState('')
-  const [formDesc, setFormDesc] = useState('')
-  const [formTags, setFormTags] = useState('')
-  const [formViewCount, setFormViewCount] = useState<number | null>(null)
-  const [formVisualStyle, setFormVisualStyle] = useState<'现实' | '动漫'>('现实')
-  const [formStyle, setFormStyle] = useState<string>(PROJECT_STYLE_OPTIONS_BY_VISUAL['现实'][0]?.value ?? '真人都市')
+  const [createSeed, setCreateSeed] = useState<{ name: string; desc: string } | null>(null)
 
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
@@ -115,12 +90,7 @@ export function AssetTypeTab({
 
   const openCreate = () => {
     setEditing(null)
-    setFormName('')
-    setFormDesc('')
-    setFormTags('')
-    setFormViewCount(null)
-    setFormVisualStyle('现实')
-    setFormStyle(PROJECT_STYLE_OPTIONS_BY_VISUAL['现实'][0]?.value ?? '真人都市')
+    setCreateSeed(null)
     setEditOpen(true)
   }
 
@@ -131,12 +101,7 @@ export function AssetTypeTab({
     const tab = searchParams.get('tab')
     if (create === '1' && tab === tabKey) {
       setEditing(null)
-      setFormName(name)
-      setFormDesc(desc)
-      setFormTags('')
-      setFormViewCount(null)
-      setFormVisualStyle('现实')
-      setFormStyle(PROJECT_STYLE_OPTIONS_BY_VISUAL['现实'][0]?.value ?? '真人都市')
+      setCreateSeed({ name, desc })
       setEditOpen(true)
       setSearchParams(
         (prev) => {
@@ -153,13 +118,7 @@ export function AssetTypeTab({
 
   const openEdit = (asset: StudioAssetLike) => {
     setEditing(asset)
-    setFormName(asset.name)
-    setFormDesc(asset.description ?? '')
-    setFormTags((asset.tags ?? []).join(', '))
-    setFormViewCount(asset.view_count ?? null)
-    const nextVisual = (((asset as any).visual_style as '现实' | '动漫' | undefined) ?? '现实') as '现实' | '动漫'
-    setFormVisualStyle(nextVisual)
-    setFormStyle(((asset as any).style as string | undefined) ?? PROJECT_STYLE_OPTIONS_BY_VISUAL[nextVisual]?.[0]?.value ?? '真人都市')
+    setCreateSeed(null)
     setEditOpen(true)
   }
 
@@ -171,51 +130,10 @@ export function AssetTypeTab({
     openEdit(asset)
   }
 
-  const handleSave = async () => {
-    if (!formName.trim()) {
-      message.warning('请输入资产名称')
-      return
-    }
-
-    try {
-      const nextViewCount = clampViewCount(formViewCount)
-
-      if (editing) {
-        const next = await updateAsset(editing.id, {
-          name: formName.trim(),
-          description: formDesc.trim(),
-          tags: normalizeTags(formTags),
-          view_count: nextViewCount,
-          visual_style: formVisualStyle,
-          style: formStyle,
-        })
-        const normalizedNext = normalizeAsset(next)
-        setAssets((prev) => prev.map((a) => (a.id === editing.id ? normalizedNext : a)))
-        message.success('已保存')
-      } else {
-        await createAsset({
-          id: `asset_${Date.now()}`,
-          name: formName.trim(),
-          description: formDesc.trim(),
-          tags: normalizeTags(formTags),
-          thumbnail: '',
-          visual_style: formVisualStyle,
-          style: formStyle,
-          ...(nextViewCount === null ? {} : { view_count: nextViewCount }),
-        })
-        message.success('已创建')
-        // 创建后回到第一页刷新，保证立刻可见（服务端可能按时间倒序）
-        setPage(1)
-        await load({ page: 1 })
-      }
-      setEditOpen(false)
-      setEditing(null)
-      if (editing) {
-        await load()
-      }
-    } catch {
-      message.error('保存失败')
-    }
+  const handleModalCancel = () => {
+    setEditOpen(false)
+    setEditing(null)
+    setCreateSeed(null)
   }
 
   const handleDelete = (asset: StudioAssetLike) => {
@@ -282,44 +200,45 @@ export function AssetTypeTab({
             filtered.map((a) => {
               const thumbnailUrl = resolveAssetUrl(a.thumbnail)
               return (
-              <Col xs={24} sm={12} md={8} lg={6} key={a.id}>
-                <DisplayImageCard
-                  title={<span className="truncate">{a.name}</span>}
-                  imageUrl={thumbnailUrl}
-                  imageAlt={a.name}
-                  placeholder="未生成"
-                  onImageClick={() => openPreview(a)}
-                  extra={
-                    <Space size="small">
-                      <Button size="small" type="link" icon={<EditOutlined />} onClick={() => handleEdit(a)}>
-                        编辑
-                      </Button>
-                    </Space>
-                  }
-                  actions={[
-                    <Button
-                      type="text"
-                      key="del"
-                      danger
-                      icon={<DeleteOutlined />}
-                      size="small"
-                      onClick={() => handleDelete(a)}
-                    />,
-                  ]}
-                  meta={
-                    <>
-                      <div className="text-xs text-gray-500 mb-2 line-clamp-2">{a.description || '暂无描述'}</div>
-                      <div className="flex flex-wrap gap-1">
-                        {typeof a.view_count === 'number' && <Tag color="blue">镜头 {a.view_count}</Tag>}
-                        {(a.tags ?? []).slice(0, 3).map((t) => (
-                          <Tag key={t}>{t}</Tag>
-                        ))}
-                      </div>
-                    </>
-                  }
-                />
-              </Col>
-            )})
+                <Col xs={24} sm={12} md={8} lg={6} key={a.id}>
+                  <DisplayImageCard
+                    title={<span className="truncate">{a.name}</span>}
+                    imageUrl={thumbnailUrl}
+                    imageAlt={a.name}
+                    placeholder="未生成"
+                    onImageClick={() => openPreview(a)}
+                    extra={
+                      <Space size="small">
+                        <Button size="small" type="link" icon={<EditOutlined />} onClick={() => handleEdit(a)}>
+                          编辑
+                        </Button>
+                      </Space>
+                    }
+                    actions={[
+                      <Button
+                        type="text"
+                        key="del"
+                        danger
+                        icon={<DeleteOutlined />}
+                        size="small"
+                        onClick={() => handleDelete(a)}
+                      />,
+                    ]}
+                    meta={
+                      <>
+                        <div className="text-xs text-gray-500 mb-2 line-clamp-2">{a.description || '暂无描述'}</div>
+                        <div className="flex flex-wrap gap-1">
+                          {typeof a.view_count === 'number' && <Tag color="blue">镜头 {a.view_count}</Tag>}
+                          {(a.tags ?? []).slice(0, 3).map((t) => (
+                            <Tag key={t}>{t}</Tag>
+                          ))}
+                        </div>
+                      </>
+                    }
+                  />
+                </Col>
+              )
+            })
           )}
         </Row>
 
@@ -338,54 +257,26 @@ export function AssetTypeTab({
         </div>
       </Card>
 
-      <Modal
-        title={editing ? `编辑${label}` : `新建${label}`}
+      <StudioAssetTypeFormModal
         open={editOpen}
-        onCancel={() => {
-          setEditOpen(false)
-          setEditing(null)
+        label={label}
+        entityType={tabKey}
+        editing={editing}
+        createAsset={createAsset}
+        updateAsset={updateAsset}
+        onCancel={handleModalCancel}
+        seedCreateForm={createSeed ? { name: createSeed.name, description: createSeed.desc } : null}
+        onSeedConsumed={() => setCreateSeed(null)}
+        onSaved={async (ctx) => {
+          if (ctx.type === 'update') {
+            setAssets((prev) => prev.map((a) => (a.id === ctx.id ? ctx.asset : a)))
+            await load()
+          } else {
+            setPage(1)
+            await load({ page: 1 })
+          }
         }}
-        onOk={handleSave}
-        okText="保存"
-        width={560}
-      >
-        <div className="space-y-3">
-          <div>
-            <span className="text-gray-600 text-sm">名称</span>
-            <Input value={formName} onChange={(e) => setFormName(e.target.value)} className="mt-1" />
-          </div>
-          <div>
-            <span className="text-gray-600 text-sm">描述</span>
-            <Input.TextArea value={formDesc} onChange={(e) => setFormDesc(e.target.value)} rows={4} className="mt-1" />
-          </div>
-          <div>
-            <span className="text-gray-600 text-sm">标签（逗号分隔）</span>
-            <Input value={formTags} onChange={(e) => setFormTags(e.target.value)} className="mt-1" />
-          </div>
-          <div>
-            <span className="text-gray-600 text-sm">镜头数</span>
-            <InputNumber
-              min={0}
-              max={4}
-              precision={0}
-              value={formViewCount}
-              onChange={(v) => setFormViewCount(v ?? null)}
-              className="mt-1 w-full"
-              placeholder="例如 4（最大 4）"
-            />
-          </div>
-          <div>
-            <ProjectVisualStyleAndStyleFields
-              visual_style={formVisualStyle}
-              style={formStyle}
-              onChange={(next) => {
-                setFormVisualStyle(next.visual_style)
-                setFormStyle(next.style)
-              }}
-            />
-          </div>
-        </div>
-      </Modal>
+      />
 
       <Modal
         title={previewTitle}
@@ -395,11 +286,9 @@ export function AssetTypeTab({
         width={880}
       >
         <div className="w-full flex justify-center bg-gray-50 rounded-md overflow-hidden">
-          {/* 预览不做 image 组件依赖，直接 img */}
           <img src={previewUrl} alt={previewTitle} className="max-h-[70vh] object-contain" />
         </div>
       </Modal>
     </div>
   )
 }
-

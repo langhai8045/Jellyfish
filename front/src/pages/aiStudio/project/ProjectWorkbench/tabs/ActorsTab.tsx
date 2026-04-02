@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Image, Input, Modal, Space, message, Pagination } from 'antd'
-import { LinkOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
+import { EditOutlined, LinkOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
 import { StudioShotLinksService } from '../../../../../services/generated'
 import type { ProjectActorLinkRead } from '../../../../../services/generated'
@@ -8,6 +8,8 @@ import { StudioEntitiesApi } from '../../../../../services/studioEntities'
 import { useProjectCharacters } from '../hooks/useProjectData'
 import { resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
+import { ActorEntityFormModal } from '../../../assets/components/ActorEntityFormModal'
+import { encodeWorkbenchAssetEditReturnTo } from '../utils/workbenchAssetReturnTo'
 
 type ActorLike = {
   id: string
@@ -21,6 +23,7 @@ export function ActorsTab() {
   const { projectId } = useParams<{ projectId: string }>()
   useProjectCharacters(projectId)
 
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [actors, setActors] = useState<ActorLike[]>([])
   const [actorsLoading, setActorsLoading] = useState(false)
@@ -184,6 +187,9 @@ export function ActorsTab() {
         title="项目演员"
         extra={
           <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+              新建
+            </Button>
             <Button
               type="primary"
               icon={<LinkOutlined />}
@@ -203,6 +209,9 @@ export function ActorsTab() {
         {links.length === 0 && !linksLoading ? (
           <Empty description="暂无项目演员，可从资产库关联演员到本项目" image={Empty.PRESENTED_IMAGE_SIMPLE}>
             <Space>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+                新建
+              </Button>
               <Button
                 type="primary"
                 icon={<LinkOutlined />}
@@ -228,22 +237,36 @@ export function ActorsTab() {
                   imageUrl={resolveAssetUrl(a?.thumbnail)}
                   imageAlt={a?.name ?? l.actor_id}
                   extra={
-                    <Button
-                      size="small"
-                      danger
-                      loading={unlinkingId === l.id}
-                      onClick={() => {
-                        Modal.confirm({
-                          title: `取消关联「${a?.name ?? l.actor_id}」？`,
-                          okText: '取消关联',
-                          cancelText: '取消',
-                          okButtonProps: { danger: true },
-                          onOk: () => handleUnlinkActor(l),
-                        })
-                      }}
-                    >
-                      取消关联
-                    </Button>
+                    <Space size="small">
+                      <Button
+                        type="default"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() =>
+                          navigate(
+                            `/assets/actors/${l.actor_id}/edit?returnTo=${encodeWorkbenchAssetEditReturnTo(projectId, 'actors')}`,
+                          )
+                        }
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        loading={unlinkingId === l.id}
+                        onClick={() => {
+                          Modal.confirm({
+                            title: `取消关联「${a?.name ?? l.actor_id}」？`,
+                            okText: '取消关联',
+                            cancelText: '取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => handleUnlinkActor(l),
+                          })
+                        }}
+                      >
+                        取消关联
+                      </Button>
+                    </Space>
                   }
                   meta={
                     <div className="space-y-1">
@@ -271,6 +294,16 @@ export function ActorsTab() {
           </div>
         )}
       </Card>
+
+      <ActorEntityFormModal
+        open={createModalOpen}
+        editing={null}
+        linkProjectId={projectId}
+        onCancel={() => setCreateModalOpen(false)}
+        onSuccess={async () => {
+          await loadLinks()
+        }}
+      />
 
       <Modal
         title="从资产库关联演员"

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Input, Modal, Space, message, Pagination } from 'antd'
-import { LinkOutlined, PlusOutlined } from '@ant-design/icons'
+import { EditOutlined, LinkOutlined, PlusOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
 import { StudioShotLinksService } from '../../../../../services/generated'
 import type { ProjectSceneLinkRead } from '../../../../../services/generated'
 import { buildFileDownloadUrl, resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
 import { StudioEntitiesApi } from '../../../../../services/studioEntities'
+import { StudioAssetTypeFormModal } from '../../../assets/components/StudioAssetTypeFormModal'
+import { encodeWorkbenchAssetEditReturnTo } from '../utils/workbenchAssetReturnTo'
 
 type SceneLike = {
   id: string
@@ -23,6 +25,7 @@ export function ScenesTab() {
   const [linksLoading, setLinksLoading] = useState(false)
   const [scenesById, setScenesById] = useState<Record<string, SceneLike>>({})
 
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [scenes, setScenes] = useState<SceneLike[]>([])
   const [scenesLoading, setScenesLoading] = useState(false)
@@ -160,6 +163,9 @@ export function ScenesTab() {
         title="项目场景"
         extra={
           <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+              新建
+            </Button>
             <Button
               type="primary"
               icon={<LinkOutlined />}
@@ -190,22 +196,36 @@ export function ScenesTab() {
                   imageUrl={toThumbUrl(l.thumbnail ?? s?.thumbnail)}
                   imageAlt={s?.name ?? l.scene_id}
                   extra={
-                    <Button
-                      size="small"
-                      danger
-                      loading={unlinkingId === l.id}
-                      onClick={() => {
-                        Modal.confirm({
-                          title: `取消关联「${s?.name ?? l.scene_id}」？`,
-                          okText: '取消关联',
-                          cancelText: '取消',
-                          okButtonProps: { danger: true },
-                          onOk: () => handleUnlinkScene(l),
-                        })
-                      }}
-                    >
-                      取消关联
-                    </Button>
+                    <Space size="small">
+                      <Button
+                        type="default"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() =>
+                          navigate(
+                            `/assets/scenes/${l.scene_id}/edit?returnTo=${encodeWorkbenchAssetEditReturnTo(projectId, 'scenes')}`,
+                          )
+                        }
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        loading={unlinkingId === l.id}
+                        onClick={() => {
+                          Modal.confirm({
+                            title: `取消关联「${s?.name ?? l.scene_id}」？`,
+                            okText: '取消关联',
+                            cancelText: '取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => handleUnlinkScene(l),
+                          })
+                        }}
+                      >
+                        取消关联
+                      </Button>
+                    </Space>
                   }
                   meta={
                     <div className="space-y-1">
@@ -233,6 +253,28 @@ export function ScenesTab() {
           </div>
         )}
       </Card>
+
+      <StudioAssetTypeFormModal
+        open={createModalOpen}
+        label="场景"
+        entityType="scene"
+        editing={null}
+        linkProjectId={projectId}
+        createAsset={async (payload) => {
+          const res = await StudioEntitiesApi.create('scene', payload as Record<string, unknown>)
+          if (!res.data) throw new Error('empty scene')
+          return res.data as SceneLike
+        }}
+        updateAsset={async (id, payload) => {
+          const res = await StudioEntitiesApi.update('scene', id, payload as Record<string, unknown>)
+          if (!res.data) throw new Error('empty scene')
+          return res.data as SceneLike
+        }}
+        onCancel={() => setCreateModalOpen(false)}
+        onSaved={async () => {
+          await loadLinks()
+        }}
+      />
 
       <Modal
         title="从资产库关联场景"

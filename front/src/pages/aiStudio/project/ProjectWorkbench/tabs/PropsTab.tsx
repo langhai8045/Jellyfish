@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Input, Modal, Space, message, Pagination } from 'antd'
-import { LinkOutlined, PlusOutlined } from '@ant-design/icons'
+import { EditOutlined, LinkOutlined, PlusOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { StudioShotLinksService } from '../../../../../services/generated'
 import type { ProjectCostumeLinkRead, ProjectPropLinkRead } from '../../../../../services/generated'
 import { resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
 import { StudioEntitiesApi } from '../../../../../services/studioEntities'
+import { StudioAssetTypeFormModal } from '../../../assets/components/StudioAssetTypeFormModal'
+import { encodeWorkbenchAssetEditReturnTo, type WorkbenchAssetTabParam } from '../utils/workbenchAssetReturnTo'
 
 type AssetKind = 'prop' | 'costume'
 
@@ -25,6 +27,8 @@ function LinkedAssetTab({
   projectId: string
 }) {
   const navigate = useNavigate()
+  const workbenchTab: WorkbenchAssetTabParam = kind === 'prop' ? 'props' : 'costumes'
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -181,6 +185,9 @@ function LinkedAssetTab({
         title={`项目${kind === 'prop' ? '道具' : '服装'}`}
         extra={
           <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+              新建
+            </Button>
             <Button
               type="primary"
               icon={<LinkOutlined />}
@@ -213,22 +220,38 @@ function LinkedAssetTab({
                   imageUrl={resolveAssetUrl(linkThumb ?? asset?.thumbnail)}
                   imageAlt={asset?.name ?? assetId}
                   extra={
-                    <Button
-                      size="small"
-                      danger
-                      loading={unlinkingId === l.id}
-                      onClick={() => {
-                        Modal.confirm({
-                          title: `取消关联「${asset?.name ?? assetId}」？`,
-                          okText: '取消关联',
-                          cancelText: '取消',
-                          okButtonProps: { danger: true },
-                          onOk: () => handleUnlink(l),
-                        })
-                      }}
-                    >
-                      取消关联
-                    </Button>
+                    <Space size="small">
+                      <Button
+                        type="default"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          const path =
+                            kind === 'prop'
+                              ? `/assets/props/${assetId}/edit`
+                              : `/assets/costumes/${assetId}/edit`
+                          navigate(`${path}?returnTo=${encodeWorkbenchAssetEditReturnTo(projectId, workbenchTab)}`)
+                        }}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        loading={unlinkingId === l.id}
+                        onClick={() => {
+                          Modal.confirm({
+                            title: `取消关联「${asset?.name ?? assetId}」？`,
+                            okText: '取消关联',
+                            cancelText: '取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => handleUnlink(l),
+                          })
+                        }}
+                      >
+                        取消关联
+                      </Button>
+                    </Space>
                   }
                   meta={
                     <div className="space-y-1">
@@ -256,6 +279,30 @@ function LinkedAssetTab({
           </div>
         )}
       </Card>
+
+      <StudioAssetTypeFormModal
+        open={createModalOpen}
+        label={kind === 'prop' ? '道具' : '服装'}
+        entityType={kind}
+        editing={null}
+        linkProjectId={projectId}
+        createAsset={async (payload) => {
+          const entity = kind === 'prop' ? 'prop' : 'costume'
+          const res = await StudioEntitiesApi.create(entity, payload as Record<string, unknown>)
+          if (!res.data) throw new Error(`empty ${entity}`)
+          return res.data as AssetItemLike
+        }}
+        updateAsset={async (id, payload) => {
+          const entity = kind === 'prop' ? 'prop' : 'costume'
+          const res = await StudioEntitiesApi.update(entity, id, payload as Record<string, unknown>)
+          if (!res.data) throw new Error(`empty ${entity}`)
+          return res.data as AssetItemLike
+        }}
+        onCancel={() => setCreateModalOpen(false)}
+        onSaved={async () => {
+          await loadLinks()
+        }}
+      />
 
       <Modal
         title={`从资产库关联${kind === 'prop' ? '道具' : '服装'}`}
@@ -308,10 +355,12 @@ function LinkedAssetTab({
 
 export function PropsTab() {
   const { projectId } = useParams<{ projectId: string }>()
-  return <LinkedAssetTab kind="prop" projectId={projectId ?? ''} />
+  if (!projectId) return null
+  return <LinkedAssetTab kind="prop" projectId={projectId} />
 }
 
 export function CostumesTab() {
   const { projectId } = useParams<{ projectId: string }>()
-  return <LinkedAssetTab kind="costume" projectId={projectId ?? ''} />
+  if (!projectId) return null
+  return <LinkedAssetTab kind="costume" projectId={projectId} />
 }
